@@ -103,4 +103,103 @@ function parse(text) {
   return { entries, ignored };
 }
 
-module.exports = { configPath, read, write, parse, MAX_BYTES };
+// Named presets: each one is a plain mpv.conf-style file that can be applied
+// to the running player on top of the main mpv.conf.
+const NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,63}$/u;
+const MAX_PROFILES = 100;
+
+function validName(name) {
+  return typeof name === "string" && NAME_RE.test(name) && !name.endsWith(" ");
+}
+
+function profilesDir(userData) {
+  return path.join(userData, "mpv-profiles");
+}
+
+function profilePath(userData, name) {
+  return path.join(profilesDir(userData), name + ".conf");
+}
+
+function listProfiles(userData) {
+  try {
+    return fs
+      .readdirSync(profilesDir(userData))
+      .filter((file) => file.endsWith(".conf"))
+      .map((file) => file.slice(0, -5))
+      .filter(validName)
+      .sort((a, b) => a.localeCompare(b));
+  } catch {
+    return [];
+  }
+}
+
+// null when the name is invalid or the profile does not exist.
+function readProfile(userData, name) {
+  if (!validName(name)) return null;
+  try {
+    return fs.readFileSync(profilePath(userData, name), "utf8");
+  } catch {
+    return null;
+  }
+}
+
+function writeProfile(userData, name, text) {
+  if (!validName(name)) return { ok: false, error: "недопустимое имя" };
+  if (typeof text !== "string" || !text.trim())
+    return { ok: false, error: "пустой профиль" };
+  if (Buffer.byteLength(text) > MAX_BYTES)
+    return { ok: false, error: "слишком большой текст" };
+  const existing = listProfiles(userData);
+  if (!existing.includes(name) && existing.length >= MAX_PROFILES)
+    return { ok: false, error: "слишком много профилей" };
+  fs.mkdirSync(profilesDir(userData), { recursive: true });
+  fs.writeFileSync(
+    profilePath(userData, name),
+    text.endsWith("\n") ? text : text + "\n",
+    "utf8",
+  );
+  return { ok: true };
+}
+
+function deleteProfile(userData, name) {
+  if (!validName(name)) return false;
+  fs.rmSync(profilePath(userData, name), { force: true });
+  return true;
+}
+
+// The profile applied on top of mpv.conf; it stays until the user changes it.
+function activePath(userData) {
+  return path.join(userData, "mpv-active-profile");
+}
+
+function getActive(userData) {
+  try {
+    const name = fs.readFileSync(activePath(userData), "utf8").trim();
+    return validName(name) && readProfile(userData, name) !== null
+      ? name
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function setActive(userData, name) {
+  if (!name) return fs.rmSync(activePath(userData), { force: true });
+  fs.mkdirSync(userData, { recursive: true });
+  fs.writeFileSync(activePath(userData), name, "utf8");
+}
+
+module.exports = {
+  configPath,
+  read,
+  write,
+  parse,
+  MAX_BYTES,
+  validName,
+  listProfiles,
+  readProfile,
+  writeProfile,
+  deleteProfile,
+  getActive,
+  setActive,
+};

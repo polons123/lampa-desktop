@@ -176,6 +176,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
     stop: () => ipcRenderer.invoke("mpv:stop"),
     getConfig: () => ipcRenderer.invoke("mpv:config-get"),
     setConfig: (text) => ipcRenderer.invoke("mpv:config-set", text),
+    profiles: () => ipcRenderer.invoke("mpv:profiles"),
+    getProfile: (name) => ipcRenderer.invoke("mpv:profile-get", name),
+    saveProfile: (name, text) =>
+      ipcRenderer.invoke("mpv:profile-save", name, text),
+    deleteProfile: (name) => ipcRenderer.invoke("mpv:profile-delete", name),
+    applyProfile: (name) => ipcRenderer.invoke("mpv:profile-apply", name),
     onEvent: (callback) => {
       const listener = (_event, data) => callback(data);
       ipcRenderer.on("mpv:event", listener);

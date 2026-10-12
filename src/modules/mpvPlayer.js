@@ -70,7 +70,11 @@ function ensureAttached(win) {
   const native = loadAddon();
   if (!native) throw addonError || new Error("mpv unavailable");
   if (attachedWindow === win) return native;
-  if (attachedWindow) native.destroy();
+  if (attachedWindow) {
+    native.destroy();
+    originals.clear();
+    profileOriginals.clear();
+  }
   native.attach(win.getNativeWindowHandle(), (event) => {
     mpvEvent(event);
     if (win.isDestroyed() || win.webContents.isDestroyed()) return;
@@ -117,29 +121,64 @@ function ensureAttached(win) {
 // Options from the user's mpv.conf are applied before every file. Values that
 // were overridden are remembered so a line removed from the file is undone.
 const originals = new Map();
+// The active profile sits on top of mpv.conf with its own memory, so it can be
+// taken off again (or swapped for another) while a video is playing.
+const profileOriginals = new Map();
 
-function applyUserConfig(native, userData) {
-  const { entries } = mpvConfig.parse(mpvConfig.read(userData));
-  const wanted = new Set(
-    entries.filter((entry) => !entry.op).map((entry) => entry.name),
-  );
-  for (const [name, original] of originals) {
-    if (wanted.has(name)) continue;
-    if (original !== null) native.setProperty(name, original);
-    originals.delete(name);
-  }
+function applyEntries(native, entries, store) {
   for (const { name, value, op } of entries) {
     let result;
     if (op) {
       result = native.command(["change-list", name, op, value]);
     } else {
-      if (!originals.has(name)) originals.set(name, native.getProperty(name));
+      if (!store.has(name)) store.set(name, native.getProperty(name));
       result = native.setProperty(name, value);
     }
     if (result < 0)
       console.warn(`[mpv.conf] mpv rejected ${name}=${value} (${result})`);
   }
-  return new Set(entries.map((entry) => entry.name));
+}
+
+function revertEntries(native, store, keep = new Set()) {
+  for (const [name, original] of store) {
+    if (keep.has(name)) continue;
+    if (original !== null) native.setProperty(name, original);
+    store.delete(name);
+  }
+}
+
+function applyUserConfig(native, userData) {
+  // Order matters: take the profile off, bring mpv.conf up to date, put the
+  // profile back on top.
+  revertEntries(native, profileOriginals);
+  const { entries } = mpvConfig.parse(mpvConfig.read(userData));
+  revertEntries(
+    native,
+    originals,
+    new Set(entries.filter((entry) => !entry.op).map((entry) => entry.name)),
+  );
+  applyEntries(native, entries, originals);
+  const keys = new Set(entries.map((entry) => entry.name));
+  const profile = mpvConfig.getActive(userData);
+  if (profile) {
+    const parsed = mpvConfig.parse(mpvConfig.readProfile(userData, profile));
+    applyEntries(native, parsed.entries, profileOriginals);
+    parsed.entries.forEach((entry) => keys.add(entry.name));
+  }
+  return keys;
+}
+
+// Applies the saved mpv.conf and active profile to the running player without
+// opening a file or restarting anything. false when mpv is not running.
+function reapplyConfig() {
+  if (!attachedWindow) return false;
+  try {
+    applyUserConfig(loadAddon(), app.getPath("userData"));
+    return true;
+  } catch (error) {
+    console.error("[mpv.conf] live apply failed:", error);
+    return false;
+  }
 }
 
 // options: { start?: seconds, headers?: {k: v}, volume?: 0..100 }
@@ -186,6 +225,8 @@ function stop() {
 function shutdown() {
   if (!attachedWindow) return;
   attachedWindow = null;
+  originals.clear();
+  profileOriginals.clear();
   try {
     loadAddon().destroy();
   } catch (error) {
@@ -199,6 +240,8 @@ module.exports = {
   command,
   getProperty,
   setProperty,
+  reapplyConfig,
+  applyUserConfig,
   stop,
   shutdown,
 };

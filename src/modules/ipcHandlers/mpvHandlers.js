@@ -53,7 +53,53 @@ function registerMpvHandlers(getMainWindow) {
       return { ok: false, error: "слишком большой текст" };
     mpvConfig.write(app.getPath("userData"), text);
     const { entries, ignored } = mpvConfig.parse(text);
-    return { ok: true, applied: entries.length, ignored };
+    return {
+      ok: true,
+      applied: entries.length,
+      ignored,
+      live: mpv.reapplyConfig(),
+    };
+  });
+
+  // Profiles: named presets applied on top of mpv.conf. Changes reach the
+  // running player at once (live: true); otherwise at the next video.
+  const userData = () => app.getPath("userData");
+  ipcMain.handle("mpv:profiles", (event) => {
+    if (!fromMainWindow(event)) return null;
+    return {
+      names: mpvConfig.listProfiles(userData()),
+      active: mpvConfig.getActive(userData()),
+    };
+  });
+  ipcMain.handle("mpv:profile-get", (event, name) => {
+    if (!fromMainWindow(event)) return null;
+    return mpvConfig.readProfile(userData(), name);
+  });
+  ipcMain.handle("mpv:profile-save", (event, name, text) => {
+    if (!fromMainWindow(event)) return { ok: false, error: "forbidden" };
+    const result = mpvConfig.writeProfile(userData(), name, text);
+    if (!result.ok) return result;
+    const { entries, ignored } = mpvConfig.parse(text);
+    // A change to the profile in use is applied to the running player now.
+    const live =
+      mpvConfig.getActive(userData()) === name ? mpv.reapplyConfig() : false;
+    return { ok: true, applied: entries.length, ignored, live };
+  });
+  ipcMain.handle("mpv:profile-delete", (event, name) => {
+    if (!fromMainWindow(event)) return { ok: false, error: "forbidden" };
+    const wasActive = mpvConfig.getActive(userData()) === name;
+    if (!mpvConfig.deleteProfile(userData(), name))
+      return { ok: false, error: "недопустимое имя" };
+    if (wasActive) mpvConfig.setActive(userData(), null);
+    return { ok: true, live: wasActive ? mpv.reapplyConfig() : false };
+  });
+  // name = null takes the active profile off.
+  ipcMain.handle("mpv:profile-apply", (event, name) => {
+    if (!fromMainWindow(event)) return { ok: false, error: "forbidden" };
+    if (name !== null && mpvConfig.readProfile(userData(), name) === null)
+      return { ok: false, error: "профиль не найден" };
+    mpvConfig.setActive(userData(), name);
+    return { ok: true, live: mpv.reapplyConfig() };
   });
 }
 

@@ -61,6 +61,19 @@ Behaviour:
   sections and options that run code or break embedding (`script`, `include`,
   `input-ipc-server`, `ytdl*`, `vo`, `wid`, …); ignored lines are listed after
   saving.
+- **Profiles:** the mpv.conf editor has a selector (main mpv.conf or a saved
+  profile), «Сохранить как…» (saves the text as a named profile) and «Удалить».
+  Profiles are plain files in `~/Library/Application Support/Lampa/mpv-profiles/`.
+  While a video plays, press **P** to open a menu and pick a profile (or «Без
+  профиля»): the options are sent to the running mpv through `setProperty` with no
+  restart, and the previous values are restored when you switch or turn it off.
+  The chosen profile is remembered (`mpv-active-profile`) and applied on top of
+  mpv.conf for every following video; its options win over mpv.conf. Saving
+  mpv.conf or the active profile also applies it to the video that is playing.
+  The same blocked options apply; `change-list` operations (`-add`, `-append`, …)
+  are not undone when a profile is taken off. IPC for scripts/plugins:
+  `electronAPI.mpv.profiles / getProfile / saveProfile / deleteProfile /
+applyProfile`.
 - **AC3/EAC3 fallback:** Chromium's HTML5 player cannot decode AC3/EAC3. If an
   online stream plays without decoded audio (after about 1.5 s) or the HTML5 player
   fails fatally, the same link is reopened in mpv inside the running player, at the

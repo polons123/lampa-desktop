@@ -638,10 +638,16 @@
           .mpv-conf__text { height: 20em; resize: none; padding: 0.8em;
             border: 0; border-radius: 0.6em; background: rgba(255, 255, 255, 0.1);
             color: #fff; font: 0.95em/1.4 ui-monospace, Menlo, monospace; }
+          .mpv-conf__row { display: flex; gap: 0.8em; align-items: center; }
+          .mpv-conf__row select, .mpv-conf__row input { flex: 1; min-width: 0; padding: 0.6em 0.8em;
+            border: 0; border-radius: 0.6em; background: rgba(255, 255, 255, 0.1);
+            color: #fff; font-size: 1em; }
+          .mpv-conf__row option { color: #000; }
           .mpv-conf__buttons { display: flex; gap: 0.8em; justify-content: flex-end; }
-          .mpv-conf__buttons button { padding: 0.6em 1.4em; border: 0; border-radius: 0.6em;
+          .mpv-conf__buttons button, .mpv-conf__row button { padding: 0.6em 1.4em; border: 0; border-radius: 0.6em;
             background: rgba(255, 255, 255, 0.15); color: #fff; font-size: 1em; cursor: pointer; }
-          .mpv-conf__buttons button:hover, .mpv-conf__buttons button:focus {
+          .mpv-conf__buttons button:hover, .mpv-conf__buttons button:focus,
+          .mpv-conf__row button:hover, .mpv-conf__row button:focus {
             background: rgba(255, 255, 255, 0.3); outline: 0; }`;
         document.head.appendChild(style);
       }
@@ -651,9 +657,17 @@
         <div class="mpv-conf__box">
           <div class="mpv-conf__title"></div>
           <div class="mpv-conf__hint"></div>
+          <div class="mpv-conf__row">
+            <select class="mpv-conf__target"></select>
+            <button data-act="delete"></button>
+          </div>
           <textarea class="mpv-conf__text" spellcheck="false" autocapitalize="off"
             autocomplete="off" placeholder="# hwdec=videotoolbox&#10;# demuxer-max-bytes=1GiB"></textarea>
           <div class="mpv-conf__msg"></div>
+          <div class="mpv-conf__row">
+            <input class="mpv-conf__name" maxlength="64" spellcheck="false" autocomplete="off">
+            <button data-act="saveas"></button>
+          </div>
           <div class="mpv-conf__buttons">
             <button data-act="clear"></button>
             <button data-act="cancel"></button>
@@ -670,8 +684,77 @@
         "app_settings_mpv_config_cancel",
       );
       q('[data-act="save"]').textContent = t("app_settings_mpv_config_save");
+      q('[data-act="delete"]').textContent = t(
+        "app_settings_mpv_profile_delete",
+      );
+      q('[data-act="saveas"]').textContent = t(
+        "app_settings_mpv_profile_saveas",
+      );
+      q(".mpv-conf__name").placeholder = t("app_settings_mpv_profile_name");
       const text = q(".mpv-conf__text");
+      const target = q(".mpv-conf__target");
+      const msg = q(".mpv-conf__msg");
       text.value = info.text;
+      let current = null; // null: the main mpv.conf; otherwise a profile name
+
+      // Rebuilds the list of what can be edited and selects `name`.
+      async function fillTargets(name) {
+        const list = await api.profiles().catch(() => null);
+        const names = list?.names || [];
+        target.textContent = "";
+        const add = (value, label) => {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = label;
+          target.appendChild(option);
+        };
+        add("", t("app_settings_mpv_profile_main"));
+        for (const item of names)
+          add("p:" + item, item + (list.active === item ? " ✓" : ""));
+        current = names.includes(name) ? name : null;
+        target.value = current === null ? "" : "p:" + current;
+        q('[data-act="delete"]').style.display = current === null ? "none" : "";
+      }
+      await fillTargets(null);
+
+      target.addEventListener("change", async () => {
+        const name = target.value ? target.value.slice(2) : null;
+        const loaded =
+          name === null
+            ? (await api.getConfig().catch(() => null))?.text
+            : await api.getProfile(name).catch(() => null);
+        if (typeof loaded !== "string") return fillTargets(current);
+        msg.textContent = "";
+        text.value = loaded;
+        await fillTargets(name);
+        text.focus();
+      });
+
+      // Shows what mpv ignored; otherwise confirms and tells whether the
+      // running player already uses the change.
+      function report(result, after) {
+        if (!result?.ok) {
+          msg.textContent =
+            t("app_settings_mpv_config_error") +
+            (result?.error ? ": " + result.error : "");
+          return false;
+        }
+        if (result.ignored?.length) {
+          msg.textContent =
+            t("app_settings_mpv_config_ignored") +
+            "\n" +
+            result.ignored
+              .map((item) => `${item.line}: ${item.text} — ${item.reason}`)
+              .join("\n");
+          return false;
+        }
+        close();
+        showToast(
+          t(after) +
+            (result.live ? "\n" + t("app_settings_mpv_applied_live") : ""),
+        );
+        return true;
+      }
 
       const close = () => {
         window.removeEventListener("keydown", onKey, true);
@@ -693,29 +776,166 @@
           text.value = "";
           text.focus();
         }
+        if (act === "delete" && current !== null) {
+          const result = await api.deleteProfile(current).catch(() => null);
+          if (!result?.ok) return report(result);
+          await fillTargets(null);
+          text.value = (await api.getConfig().catch(() => null))?.text || "";
+          msg.textContent = t("app_settings_mpv_profile_deleted");
+          return;
+        }
+        if (act === "saveas") {
+          const name = q(".mpv-conf__name").value.trim();
+          if (!name) {
+            msg.textContent = t("app_settings_mpv_profile_name");
+            return;
+          }
+          const result = await api
+            .saveProfile(name, text.value)
+            .catch(() => null);
+          if (!result?.ok || result.ignored?.length)
+            return report(result, "app_settings_mpv_profile_saved");
+          await fillTargets(name);
+          q(".mpv-conf__name").value = "";
+          msg.textContent = t("app_settings_mpv_profile_saved");
+          return;
+        }
         if (act !== "save") return;
-        const result = await api.setConfig(text.value).catch(() => null);
-        if (!result?.ok) {
-          q(".mpv-conf__msg").textContent =
-            t("app_settings_mpv_config_error") +
-            (result?.error ? ": " + result.error : "");
-          return;
-        }
-        if (result.ignored.length) {
-          q(".mpv-conf__msg").textContent =
-            t("app_settings_mpv_config_ignored") +
-            "\n" +
-            result.ignored
-              .map((item) => `${item.line}: ${item.text} — ${item.reason}`)
-              .join("\n");
-          return;
-        }
-        close();
-        showToast(t("app_settings_mpv_config_saved"));
+        const result =
+          current === null
+            ? await api.setConfig(text.value).catch(() => null)
+            : await api.saveProfile(current, text.value).catch(() => null);
+        report(
+          result,
+          current === null
+            ? "app_settings_mpv_config_saved"
+            : "app_settings_mpv_profile_saved",
+        );
       });
       document.body.appendChild(overlay);
       text.focus();
     }
+
+    // Menu for switching profiles while a video plays; the choice reaches mpv
+    // through the API at once, without reopening the video.
+    let menuBusy = false;
+    async function openProfileMenu() {
+      // One menu at a time: a second one would capture «select» as the
+      // controller to return to and leave the player stuck.
+      if (menuBusy || Lampa.Controller.enabled?.().name === "select") return;
+      menuBusy = true;
+      try {
+        await showProfileMenu();
+      } finally {
+        menuBusy = false;
+      }
+    }
+    async function showProfileMenu() {
+      const t = (key) => Lampa.Lang.translate(key);
+      const info = await api.profiles().catch((error) => {
+        console.error("[mpv profiles] profiles() failed:", String(error));
+        return null;
+      });
+      if (!info) return;
+      if (!info.names.length)
+        return showToast(t("app_settings_mpv_profile_none"));
+      const back = Lampa.Controller.enabled().name;
+      const items = [
+        {
+          title: t("app_settings_mpv_profile_off"),
+          value: null,
+          selected: !info.active,
+        },
+        ...info.names.map((name) => ({
+          title: name,
+          value: name,
+          selected: name === info.active,
+        })),
+      ];
+      Lampa.Select.show({
+        title: t("app_settings_mpv_profile_menu"),
+        items,
+        onBack: () => Lampa.Controller.toggle(back),
+        onSelect: async (item) => {
+          Lampa.Controller.toggle(back);
+          const result = await api.applyProfile(item.value).catch(() => null);
+          showToast(
+            result?.ok
+              ? item.value === null
+                ? t("app_settings_mpv_profile_off_done")
+                : t("app_settings_mpv_profile_on") + " " + item.value
+              : t("app_settings_mpv_config_error"),
+          );
+        },
+      });
+    }
+
+    // P opens the profile menu while mpv plays.
+    window.addEventListener(
+      "keydown",
+      (event) => {
+        if (
+          event.code !== "KeyP" ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.altKey
+        )
+          return;
+        if (!active || !Lampa.Player.opened?.()) return;
+        if (/^(INPUT|TEXTAREA|SELECT)$/.test(event.target?.tagName)) return;
+        // A menu is open when Lampa's select controller or the editor is.
+        if (
+          document.querySelector(".mpv-conf") ||
+          Lampa.Controller.enabled?.().name === "select"
+        )
+          return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        openProfileMenu().catch((error) =>
+          console.error(
+            "[mpv profiles] menu failed:",
+            String(error?.stack || error),
+          ),
+        );
+      },
+      true,
+    );
+
+    // A «Профили» button in Lampa's player panel. The panel markup belongs to
+    // Lampa (served by the user's server), so look for it defensively.
+    function addPanelButton() {
+      const panel = document.querySelector(".player-panel");
+      if (!panel || panel.querySelector(".mpv-profiles-button"))
+        return Boolean(panel);
+      const anchor =
+        panel.querySelector(".player-panel__settings") ||
+        panel.querySelector(".player-panel__playlist") ||
+        panel.querySelector(".player-panel__right > *:last-child");
+      const parent =
+        anchor?.parentElement || panel.querySelector(".player-panel__right");
+      if (!parent) return true;
+      const button = document.createElement("div");
+      button.className =
+        "player-panel__mpvprofiles mpv-profiles-button button selector";
+      button.innerHTML =
+        '<svg viewBox="0 0 24 24" width="100%" height="100%" fill="currentColor">' +
+        '<path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg>';
+      button.title = Lampa.Lang.translate("app_settings_mpv_profile_menu");
+      const $button = window.$ ? window.$(button) : null;
+      if ($button) $button.on("hover:enter", () => openProfileMenu());
+      if (anchor) anchor.after(button);
+      else parent.appendChild(button);
+      return true;
+    }
+    // The panel is built when the player opens; retry for a few seconds.
+    function watchPanel() {
+      let tries = 0;
+      const timer = setInterval(() => {
+        if (addPanelButton() || ++tries > 20) clearInterval(timer);
+      }, 250);
+    }
+    Lampa.Player.listener.follow("ready", watchPanel);
+    Lampa.Player.listener.follow("start", watchPanel);
 
     // Lampa's own notice is a bright full-width bar; this one is a small dark
     // translucent box with white text, like the rest of Lampa's overlays.
@@ -807,6 +1027,7 @@
         addStyle();
         const shim = createShim();
         active = shim;
+        watchPanel();
         callback(shim);
         return $(shim);
       },
@@ -838,8 +1059,50 @@
         en: "mpv configuration",
       },
       app_settings_mpv_config_hint: {
-        ru: "Формат mpv.conf: опция=значение, по одной в строке; # — комментарий. Профили [секции] и опции запуска кода игнорируются. Файл:",
-        en: "mpv.conf format: option=value, one per line; # starts a comment. [profile] sections and options that run code are ignored. File:",
+        ru: "Формат mpv.conf: опция=значение, по одной в строке; # — комментарий. Секции [профиль] и опции запуска кода игнорируются; именованные профили сохраняйте кнопкой «Сохранить как…». Файл:",
+        en: "mpv.conf format: option=value, one per line; # starts a comment. [profile] sections and options that run code are ignored; save named profiles with «Save as…». File:",
+      },
+      app_settings_mpv_profile_main: {
+        ru: "Основной mpv.conf",
+        en: "Main mpv.conf",
+      },
+      app_settings_mpv_profile_name: {
+        ru: "Имя нового профиля",
+        en: "New profile name",
+      },
+      app_settings_mpv_profile_saveas: {
+        ru: "Сохранить как…",
+        en: "Save as…",
+      },
+      app_settings_mpv_profile_delete: { ru: "Удалить", en: "Delete" },
+      app_settings_mpv_profile_saved: {
+        ru: "Профиль mpv сохранён",
+        en: "mpv profile saved",
+      },
+      app_settings_mpv_profile_deleted: {
+        ru: "Профиль удалён",
+        en: "Profile deleted",
+      },
+      app_settings_mpv_profile_menu: {
+        ru: "Профиль mpv",
+        en: "mpv profile",
+      },
+      app_settings_mpv_profile_off: { ru: "Без профиля", en: "No profile" },
+      app_settings_mpv_profile_off_done: {
+        ru: "Профиль mpv выключен",
+        en: "mpv profile off",
+      },
+      app_settings_mpv_profile_on: {
+        ru: "Профиль mpv:",
+        en: "mpv profile:",
+      },
+      app_settings_mpv_profile_none: {
+        ru: "Нет профилей mpv: создайте в Настройки → Плеер → Конфигурация mpv",
+        en: "No mpv profiles: create one in Settings → Player → mpv configuration",
+      },
+      app_settings_mpv_applied_live: {
+        ru: "Применено к текущему видео",
+        en: "Applied to the current video",
       },
       app_settings_mpv_config_save: { ru: "Сохранить", en: "Save" },
       app_settings_mpv_config_cancel: { ru: "Отмена", en: "Cancel" },
