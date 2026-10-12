@@ -189,6 +189,22 @@ contextBridge.exposeInMainWorld("electronAPI", {
     },
   },
 
+  downloads: {
+    start: (options) => ipcRenderer.invoke("download:start", options),
+    tools: () => ipcRenderer.invoke("download:tools"),
+    list: () => ipcRenderer.invoke("download:list"),
+    cancel: (id) => ipcRenderer.invoke("download:cancel", id),
+    remove: (id) => ipcRenderer.invoke("download:remove", id),
+    retry: (id) => ipcRenderer.invoke("download:retry", id),
+    reveal: (id) => ipcRenderer.invoke("download:reveal", id),
+    openFolder: () => ipcRenderer.invoke("download:open-folder"),
+    onUpdate: (callback) => {
+      const listener = (_event, data) => callback(data);
+      ipcRenderer.on("download:update", listener);
+      return () => ipcRenderer.removeListener("download:update", listener);
+    },
+  },
+
   player: {
     getAll: () => ipcRenderer.invoke("player-get-all"),
     getDefault: () => ipcRenderer.invoke("player-get-default"),

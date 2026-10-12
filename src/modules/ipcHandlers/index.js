@@ -12,6 +12,7 @@ const registerTorrServerHandlers = require("./torrServerHandlers");
 const registerFolderHandlers = require("./folderHandlers");
 const registerPlayerHandlers = require("./playerHandlers");
 const registerMpvHandlers = require("./mpvHandlers");
+const registerDownloadHandlers = require("./downloadHandlers");
 const registerOtherHandlers = require("./otherHandlers");
 const registerSubtitleHandlers = require("./subtitleHandlers");
 
@@ -42,6 +43,9 @@ function registerIpcHandlers() {
 
   // Встроенный плеер mpv (macOS)
   registerMpvHandlers(getMainWindow);
+
+  // Скачивание фильмов на компьютер
+  registerDownloadHandlers(getMainWindow);
 
   // Дополнительные обработчики
   registerOtherHandlers();
