@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getFullscreenMode: () => ipcRenderer.invoke("get-fullscreen-mode"),
   setFullscreenMode: (mode) => ipcRenderer.invoke("set-fullscreen-mode", mode),
   loadUrl: (url) => ipcRenderer.send("reload-page", url),
+  openAddressEditor: () => ipcRenderer.invoke("open-address-editor"),
   checkAppUpdates: () => ipcRenderer.invoke("app-check-updates"),
   openDevTools: () => ipcRenderer.invoke("open-devtools"),
   subtitles: {
@@ -164,6 +165,20 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Работа с папками
   folder: {
     open: (path) => ipcRenderer.invoke("folder-open", path),
+  },
+
+  mpv: {
+    available: () => ipcRenderer.invoke("mpv:available"),
+    open: (url, options) => ipcRenderer.invoke("mpv:open", url, options),
+    command: (args) => ipcRenderer.invoke("mpv:command", args),
+    get: (name) => ipcRenderer.invoke("mpv:get", name),
+    set: (name, value) => ipcRenderer.invoke("mpv:set", name, value),
+    stop: () => ipcRenderer.invoke("mpv:stop"),
+    onEvent: (callback) => {
+      const listener = (_event, data) => callback(data);
+      ipcRenderer.on("mpv:event", listener);
+      return () => ipcRenderer.removeListener("mpv:event", listener);
+    },
   },
 
   player: {

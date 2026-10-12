@@ -16,10 +16,10 @@ if (isDev) {
 const store = new Store({
   cwd: userDataPath,
   defaults: {
-    lampaUrl: "http://lampa.mx",
+    lampaUrl: "",
     fullscreenMode: "last",
     webSecurity: true,
-    autoUpdate: true,
+    autoUpdate: false,
     windowState: {},
     tsVersion: null,
     tsPath: null,
@@ -29,6 +29,8 @@ const store = new Store({
     defaultPlayer: "vlc",
   },
 });
+
+store.set("autoUpdate", false);
 
 console.log(`📁 Store location: ${store.path}`);
 

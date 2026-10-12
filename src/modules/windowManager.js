@@ -1,3 +1,4 @@
+const { openExternalMpv } = require("./externalMpv");
 const { BrowserWindow, screen, ipcMain } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
@@ -16,30 +17,52 @@ let recoveryWindow = null;
 let recoveryState = null;
 let recoveryHandlerRegistered = false;
 let stoppingRecovery = false;
+let recoveryCandidateUrl = null;
 const navigationControllers = new WeakMap();
 
 function ensureRecoveryHandler() {
   if (recoveryHandlerRegistered) return;
   recoveryHandlerRegistered = true;
   ipcMain.handle("lampa-recovery-try-url", (event, raw) => {
-    if (!recoveryWindow || recoveryWindow.isDestroyed() ||
-        event.sender !== recoveryWindow.webContents ||
-        event.senderFrame !== recoveryWindow.webContents.mainFrame) {
+    if (
+      !recoveryWindow ||
+      recoveryWindow.isDestroyed() ||
+      event.sender !== recoveryWindow.webContents ||
+      event.senderFrame !== recoveryWindow.webContents.mainFrame
+    ) {
       throw new Error("Недоступен защищённый редактор адреса Lampa.");
     }
     const url = normalizeHttpUrl(raw);
     const window = mainWindow;
     if (!window || window.isDestroyed()) throw new Error("Окно Lampa закрыто.");
-    store.set("lampaUrl", url);
+    recoveryCandidateUrl = url;
     openLampaUrl(window, url);
+    return true;
+  });
+
+  ipcMain.handle("lampa-recovery-cancel", (event) => {
+    if (
+      !recoveryWindow ||
+      recoveryWindow.isDestroyed() ||
+      event.sender !== recoveryWindow.webContents ||
+      event.senderFrame !== recoveryWindow.webContents.mainFrame ||
+      recoveryState?.phase !== "edit"
+    ) {
+      return false;
+    }
+    recoveryState = null;
+    closeRecoveryPanel();
     return true;
   });
 }
 
 function setRecoveryState(phase, url, error = "") {
   recoveryState = { phase, url, error };
-  if (recoveryWindow && !recoveryWindow.isDestroyed() &&
-      !recoveryWindow.webContents.isLoadingMainFrame()) {
+  if (
+    recoveryWindow &&
+    !recoveryWindow.isDestroyed() &&
+    !recoveryWindow.webContents.isLoadingMainFrame()
+  ) {
     recoveryWindow.webContents.send("lampa-recovery-state", recoveryState);
   }
 }
@@ -48,13 +71,20 @@ function ensureRecoveryWindow() {
   ensureRecoveryHandler();
   if (recoveryWindow && !recoveryWindow.isDestroyed()) return recoveryWindow;
   const panel = new BrowserWindow({
-    width: 830, height: 540, minWidth: 680, minHeight: 480,
-    show: false, backgroundColor: "#111315", autoHideMenuBar: true,
+    width: 830,
+    height: 540,
+    minWidth: 680,
+    minHeight: 480,
+    show: false,
+    backgroundColor: "#111315",
+    autoHideMenuBar: true,
     title: "Lampa — подключение",
     icon: path.join(__dirname, "../build/icon.png"),
     webPreferences: {
       preload: path.join(__dirname, "..", "recoveryPreload.js"),
-      nodeIntegration: false, contextIsolation: true, sandbox: false,
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false,
       backgroundThrottling: false,
     },
   });
@@ -69,12 +99,21 @@ function ensureRecoveryWindow() {
     if (panel === recoveryWindow) recoveryWindow = null;
     // Closing the visible recovery editor is an explicit Exit action.
     // Never strand a hidden Lampa main process behind a closed panel.
-    if (!stoppingRecovery && mainWindow && !mainWindow.isDestroyed() &&
-        !mainWindow.isVisible()) mainWindow.close();
+    if (
+      !stoppingRecovery &&
+      mainWindow &&
+      !mainWindow.isDestroyed() &&
+      !mainWindow.isVisible()
+    )
+      mainWindow.close();
   });
-  void panel.loadFile(path.join(__dirname, "..", "recovery.html"), {
-    query: { url: store.get("lampaUrl", DEFAULT_LAMPA_URL) },
-  }).catch((error) => console.error("Не удалось создать окно подключения:", error));
+  void panel
+    .loadFile(path.join(__dirname, "..", "recovery.html"), {
+      query: { url: store.get("lampaUrl", DEFAULT_LAMPA_URL) },
+    })
+    .catch((error) =>
+      console.error("Не удалось создать окно подключения:", error),
+    );
   return panel;
 }
 
@@ -86,7 +125,18 @@ function showRecoveryState(phase, url, error = "") {
     panel.show();
     panel.focus();
   }
-  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) mainWindow.hide();
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible())
+    mainWindow.hide();
+}
+
+function openAddressEditor() {
+  const panel = ensureRecoveryWindow();
+  setRecoveryState("edit", store.get("lampaUrl", DEFAULT_LAMPA_URL));
+  if (!panel.isDestroyed()) {
+    if (panel.isMinimized()) panel.restore();
+    panel.show();
+    panel.focus();
+  }
 }
 
 function closeRecoveryPanel() {
@@ -94,11 +144,14 @@ function closeRecoveryPanel() {
 }
 
 function getActiveWindow() {
-  if (recoveryWindow && !recoveryWindow.isDestroyed() &&
-      recoveryWindow.isVisible()) return recoveryWindow;
+  if (
+    recoveryWindow &&
+    !recoveryWindow.isDestroyed() &&
+    recoveryWindow.isVisible()
+  )
+    return recoveryWindow;
   return mainWindow;
 }
-
 
 function getFullscreenConfig() {
   const mode = store.get("fullscreenMode", "last");
@@ -171,6 +224,11 @@ function createWindow() {
     },
     show: false,
     backgroundColor: "#14161b",
+    // The built-in mpv view sits behind the web view, so the window must be
+    // able to composite a transparent page (macOS only, when the addon exists).
+    ...(process.platform === "darwin" && require("./mpvPlayer").isAvailable()
+      ? { transparent: true, backgroundColor: "#00000000" }
+      : {}),
     titleBarStyle: "default",
     icon: path.join(__dirname, "../build/icon.png"),
     fullscreen: fullscreenConfig.fullscreen,
@@ -237,9 +295,20 @@ function createWindow() {
 
   setupNavigationHandlers(mainWindow);
   const navigation = setupErrorHandler(mainWindow, {
-    onLoading: (url) => showRecoveryState("loading", url),
+    onLoading: (url) => {
+      if (
+        recoveryWindow &&
+        !recoveryWindow.isDestroyed() &&
+        recoveryWindow.isVisible()
+      )
+        setRecoveryState("loading", url);
+    },
     onDocumentLoaded: (url) => setRecoveryState("rendering", url),
     onReady: () => {
+      if (recoveryCandidateUrl) {
+        store.set("lampaUrl", recoveryCandidateUrl);
+        recoveryCandidateUrl = null;
+      }
       if (!mainWindow.isDestroyed()) mainWindow.setProgressBar(-1);
       showReadyWindow();
       closeRecoveryPanel();
@@ -251,7 +320,12 @@ function createWindow() {
 
   // Keep one local visible connection panel while remote Electron navigates
   // in the background. Never replace the panel on failure or retry.
-  navigation.open(store.get("lampaUrl", DEFAULT_LAMPA_URL));
+  const configuredUrl = store.get("lampaUrl", DEFAULT_LAMPA_URL);
+  if (typeof configuredUrl === "string" && configuredUrl.trim()) {
+    navigation.open(configuredUrl);
+  } else {
+    showRecoveryState("setup", "");
+  }
   watchConfiguredUrl(mainWindow, navigation);
 
   const saveState = () => {
@@ -307,7 +381,8 @@ function createWindow() {
   mainWindow.on("closed", () => {
     mainWindow = null;
     stoppingRecovery = true;
-    if (recoveryWindow && !recoveryWindow.isDestroyed()) recoveryWindow.destroy();
+    if (recoveryWindow && !recoveryWindow.isDestroyed())
+      recoveryWindow.destroy();
     recoveryWindow = null;
     stoppingRecovery = false;
   });
@@ -336,7 +411,11 @@ function setupNavigationHandlers(window) {
       ["mpv:", "iina:", "infuse:", "senplayer:"].includes(parsedUrl.protocol)
     ) {
       event.preventDefault();
-      shell.openExternal(navigationUrl).catch((error) => {
+      const launch =
+        parsedUrl.protocol === "mpv:"
+          ? openExternalMpv(navigationUrl)
+          : shell.openExternal(navigationUrl);
+      launch.catch((error) => {
         console.error("Ошибка открытия внешнего плеера:", error);
       });
       return;
@@ -426,7 +505,10 @@ function setupWindowOpenHandler(mainWindow) {
   const { shell } = require("electron");
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    const launch = url.startsWith("mpv://")
+      ? openExternalMpv(url)
+      : shell.openExternal(url);
+    launch.catch((error) => console.error("Внешний плеер:", error));
     return { action: "deny" };
   });
 }
@@ -438,4 +520,5 @@ module.exports = {
   setupNavigationHandlers,
   setupErrorHandler,
   openLampaUrl,
+  openAddressEditor,
 };

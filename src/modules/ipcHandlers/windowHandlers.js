@@ -34,6 +34,19 @@ function registerWindowHandlers(getMainWindow) {
     return { success: true, mode };
   });
 
+  ipcMain.handle("open-address-editor", (event) => {
+    const window = getMainWindow();
+    if (
+      !window ||
+      window.isDestroyed() ||
+      event.sender !== window.webContents ||
+      event.senderFrame !== window.webContents.mainFrame
+    )
+      return false;
+    require("../windowManager").openAddressEditor();
+    return true;
+  });
+
   ipcMain.on("reload-page", (event, url) => {
     const mainWindow = getMainWindow();
     if (

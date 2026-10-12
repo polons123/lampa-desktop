@@ -56,7 +56,11 @@ function injectPlugin(mainWindow) {
     .executeJavaScript(
       pluginCode +
         "\n" +
-        readFileSync(path.join(__dirname, "..", "subtitleBridge.js"), "utf-8"),
+        readFileSync(path.join(__dirname, "..", "subtitleBridge.js"), "utf-8") +
+        "\n" +
+        readFileSync(path.join(__dirname, "..", "playbackCover.js"), "utf-8") +
+        "\n" +
+        readFileSync(path.join(__dirname, "..", "mpvTube.js"), "utf-8"),
     )
     .then(() => {
       console.log("Плагин успешно внедрён");

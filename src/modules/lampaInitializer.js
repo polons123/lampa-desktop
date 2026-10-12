@@ -44,10 +44,9 @@ class LampaInitializer {
 
   async initializePlayerPath(mainWindow) {
     try {
-      if (process.platform === "darwin") {
-        console.log(`🍏 MacOS поиск плееров не требуется`);
-        return;
-      }
+      // On macOS the built-in mpv player is used; do not auto-select an
+      // external player (it overwrote Lampa's player type at every start).
+      if (process.platform === "darwin") return;
 
       // Проверяем, есть ли уже путь в localStorage
       const existingPath = await playerFinder.checkLocalStoragePath(mainWindow);

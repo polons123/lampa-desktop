@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 // Lampa page and has no privileged general-purpose store bridge.
 contextBridge.exposeInMainWorld("recoveryAPI", {
   tryUrl: (url) => ipcRenderer.invoke("lampa-recovery-try-url", url),
+  cancel: () => ipcRenderer.invoke("lampa-recovery-cancel"),
   onState: (handler) => {
     const listener = (_event, data) => handler(data);
     ipcRenderer.on("lampa-recovery-state", listener);

@@ -119,9 +119,19 @@
         uk: "URL лампи",
       },
       app_settings_lampa_url_description: {
-        ru: "По-умолчанию: http://lampa.mx и не рекомендуем его менять",
-        en: "Default: http://lampa.mx and we don't recommend changing it",
-        uk: "За замовчуванням: http://lampa.mx і не рекомендуємо його змінювати",
+        ru: "Адрес вашего сервера Lampa / Lampac; при первом запуске его нужно указать",
+        en: "Address of your Lampa / Lampac server; it is requested on first launch",
+        uk: "Адреса вашого сервера Lampa / Lampac; під час першого запуску її потрібно вказати",
+      },
+      app_settings_change_address_name: {
+        ru: "Изменить адрес Lampa…",
+        en: "Change Lampa address…",
+        uk: "Змінити адресу Lampa…",
+      },
+      app_settings_change_address_description: {
+        ru: "Открыть окно смены адреса вашего сервера Lampa / Lampac",
+        en: "Open the window to change your Lampa / Lampac server address",
+        uk: "Відкрити вікно зміни адреси вашого сервера Lampa / Lampac",
       },
       app_settings_lampa_url_ok: {
         ru: "Сохранено, ожидайте перехода...",
@@ -742,78 +752,76 @@
         }, 0);
       },
     });
-    if (!Lampa.Platform.macOS()) {
-      Lampa.SettingsApi.addParam({
-        component: "player",
-        param: {
-          name: "player_find",
-          type: "button",
-        },
-        field: {
-          name: Lampa.Lang.translate("app_settings_player_find"),
-          description: Lampa.Lang.translate(
-            "app_settings_player_find_description",
-          ),
-        },
-        onChange: async () => {
-          Lampa.Loading.start(
-            () => {},
-            Lampa.Lang.translate("app_settings_player_find"),
-          );
+    Lampa.SettingsApi.addParam({
+      component: "player",
+      param: {
+        name: "player_find",
+        type: "button",
+      },
+      field: {
+        name: Lampa.Lang.translate("app_settings_player_find"),
+        description: Lampa.Lang.translate(
+          "app_settings_player_find_description",
+        ),
+      },
+      onChange: async () => {
+        Lampa.Loading.start(
+          () => {},
+          Lampa.Lang.translate("app_settings_player_find"),
+        );
 
-          const result = await window.electronAPI.player.getAllWithDetails();
-          Lampa.Loading.stop();
+        const result = await window.electronAPI.player.getAllWithDetails();
+        Lampa.Loading.stop();
 
-          if (!result.success || result.players.length === 0) {
-            Lampa.Noty.show("Медиа плееры не найдены!", "error", 5000);
-            return;
-          }
+        if (!result.success || result.players.length === 0) {
+          Lampa.Noty.show("Медиа плееры не найдены!", "error", 5000);
+          return;
+        }
 
-          // Используем встроенный Lampa.Select вместо кастомного модального окна
-          const items = [];
-          for (let i = 0; i < result.players.length; i++) {
-            const player = result.players[i];
-            items.push({
-              title: player.name,
-              subtitle: player.path,
-              value: player.id,
-              selected: player.isDefault,
-            });
-          }
-
-          Lampa.Select.show({
-            title: "Выберите плеер по умолчанию",
-            items: items,
-            onSelect: async (item) => {
-              Lampa.Loading.start(() => {}, `Выбор ${item.title}...`);
-
-              const saveResult =
-                await window.electronAPI.player.setDefaultAndSave(item.value);
-
-              Lampa.Loading.stop();
-
-              if (saveResult.success) {
-                Lampa.Noty.show(`Выбран плеер: ${item.title}`, "success", 3000);
-                Lampa.Settings.update();
-              } else {
-                Lampa.Noty.show("Ошибка при выборе плеера", "error", 3000);
-              }
-
-              Lampa.Controller.toggle("settings_component");
-            },
-            onBack: () => {
-              Lampa.Controller.toggle("settings_component");
-            },
+        // Используем встроенный Lampa.Select вместо кастомного модального окна
+        const items = [];
+        for (let i = 0; i < result.players.length; i++) {
+          const player = result.players[i];
+          items.push({
+            title: player.name,
+            subtitle: player.path,
+            value: player.id,
+            selected: player.isDefault,
           });
-        },
-        onRender: function (element) {
-          setTimeout(function () {
-            var anchor = $('div[data-name="player_nw_path"]');
-            if (anchor.length) anchor.after(element);
-          }, 0);
-        },
-      });
-    }
+        }
+
+        Lampa.Select.show({
+          title: "Выберите плеер по умолчанию",
+          items: items,
+          onSelect: async (item) => {
+            Lampa.Loading.start(() => {}, `Выбор ${item.title}...`);
+
+            const saveResult =
+              await window.electronAPI.player.setDefaultAndSave(item.value);
+
+            Lampa.Loading.stop();
+
+            if (saveResult.success) {
+              Lampa.Noty.show(`Выбран плеер: ${item.title}`, "success", 3000);
+              Lampa.Settings.update();
+            } else {
+              Lampa.Noty.show("Ошибка при выборе плеера", "error", 3000);
+            }
+
+            Lampa.Controller.toggle("settings_component");
+          },
+          onBack: () => {
+            Lampa.Controller.toggle("settings_component");
+          },
+        });
+      },
+      onRender: function (element) {
+        setTimeout(function () {
+          var anchor = $('div[data-name="player_nw_path"]');
+          if (anchor.length) anchor.after(element);
+        }, 0);
+      },
+    });
 
     Promise.all([
       settingsManager.addToQueue({
@@ -848,42 +856,6 @@
         },
       }),
 
-      settingsManager.loadAsyncSetting("autoUpdate", {
-        order: 4,
-        param: {
-          name: "app_settings_autoUpdate",
-          type: "trigger",
-        },
-        field: {
-          name: Lampa.Lang.translate("app_settings_autoupdate_field_name"),
-        },
-        onChange: async function (value) {
-          await window.electronAPI.store.set("autoUpdate", value === "true");
-        },
-      }),
-
-      settingsManager.addToQueue({
-        order: 4.5,
-        param: { name: "app_settings_check_updates", type: "button" },
-        field: {
-          name: "Проверить обновления",
-          description:
-            "Проверить новую версию Lampa или показать состояние загрузки обновления.",
-        },
-        onChange: async () => {
-          Lampa.Noty.show("Проверка обновлений…");
-          try {
-            const result = await window.electronAPI.checkAppUpdates();
-            Lampa.Noty.show(result.message);
-          } catch (error) {
-            console.error("APP Update check failed:", error);
-            Lampa.Noty.show(
-              "Не удалось проверить обновления. Попробуйте ещё раз.",
-            );
-          }
-        },
-      }),
-
       settingsManager.addToQueue({
         order: 4.6,
         param: { name: "app_settings_console", type: "button" },
@@ -895,50 +867,18 @@
         onChange: () => window.electronAPI.openDevTools(),
       }),
 
-      settingsManager.loadAsyncSetting("lampaUrl", {
-        order: 5,
-        param: {
-          name: "app_settings_lampaUrl",
-          type: "input",
-          placeholder: Lampa.Lang.translate(
-            "app_settings_lampa_url_placeholder",
-          ),
-          values: "",
-        },
+      settingsManager.addToQueue({
+        order: 4.9,
+        param: { name: "app_settings_change_address", type: "button" },
         field: {
-          name: Lampa.Lang.translate("app_settings_lampa_url_name"),
+          name: Lampa.Lang.translate("app_settings_change_address_name"),
           description: Lampa.Lang.translate(
-            "app_settings_lampa_url_description",
+            "app_settings_change_address_description",
           ),
         },
-        onChange: async function (value) {
-          let valid = false;
-          try {
-            const url = new URL(value);
-            valid = url.protocol === "http:" || url.protocol === "https:";
-          } catch {
-            valid = false;
-          }
-          if (!valid) {
-            Lampa.Noty.show(
-              Lampa.Lang.translate("app_settings_lampa_url_error"),
-            );
-            return;
-          }
-
-          try {
-            // The main process validates and loads the address through the
-            // same navigation controller used at startup. Never schedule
-            // a second delayed store update after switching pages.
-            await window.electronAPI.store.set("lampaUrl", value);
-          } catch (error) {
-            console.error("Ошибка изменения URL Lampa:", error);
-            Lampa.Noty.show(
-              Lampa.Lang.translate("app_settings_lampa_url_error"),
-            );
-          }
-        },
+        onChange: () => window.electronAPI.openAddressEditor(),
       }),
+
       settingsManager.loadAsyncSetting("webSecurity", {
         order: 8.5,
         param: {
@@ -1404,77 +1344,71 @@
             });
           },
         });
-      if (!Lampa.Platform.macOS()) {
-        settingsManager.addToQueue({
-          component: "app_settings_player_find",
-          order: 5.5,
-          param: {
-            name: "player_find",
-            type: "button",
-          },
-          field: {
-            name: Lampa.Lang.translate("app_settings_player_find"),
-            description: Lampa.Lang.translate(
-              "app_settings_player_find_description",
-            ),
-          },
-          onChange: async () => {
-            Lampa.Loading.start(
-              () => {},
-              Lampa.Lang.translate("app_settings_player_find"),
-            );
+      settingsManager.addToQueue({
+        component: "app_settings_player_find",
+        order: 5.5,
+        param: {
+          name: "player_find",
+          type: "button",
+        },
+        field: {
+          name: Lampa.Lang.translate("app_settings_player_find"),
+          description: Lampa.Lang.translate(
+            "app_settings_player_find_description",
+          ),
+        },
+        onChange: async () => {
+          Lampa.Loading.start(
+            () => {},
+            Lampa.Lang.translate("app_settings_player_find"),
+          );
 
-            const result = await window.electronAPI.player.getAllWithDetails();
-            Lampa.Loading.stop();
+          const result = await window.electronAPI.player.getAllWithDetails();
+          Lampa.Loading.stop();
 
-            if (!result.success || result.players.length === 0) {
-              Lampa.Noty.show("Медиа плееры не найдены!", "error", 5000);
-              return;
-            }
+          if (!result.success || result.players.length === 0) {
+            Lampa.Noty.show("Медиа плееры не найдены!", "error", 5000);
+            return;
+          }
 
-            // Используем встроенный Lampa.Select вместо кастомного модального окна
-            const items = [];
-            for (let i = 0; i < result.players.length; i++) {
-              const player = result.players[i];
-              items.push({
-                title: player.name,
-                subtitle: player.path,
-                value: player.id,
-                selected: player.isDefault,
-              });
-            }
-
-            Lampa.Select.show({
-              title: "Выберите плеер по умолчанию",
-              items: items,
-              onSelect: async (item) => {
-                Lampa.Loading.start(() => {}, `Выбор ${item.title}...`);
-
-                const saveResult =
-                  await window.electronAPI.player.setDefaultAndSave(item.value);
-
-                Lampa.Loading.stop();
-
-                if (saveResult.success) {
-                  Lampa.Noty.show(
-                    `Выбран плеер: ${item.title}`,
-                    "success",
-                    3000,
-                  );
-                  Lampa.Settings.update();
-                } else {
-                  Lampa.Noty.show("Ошибка при выборе плеера", "error", 3000);
-                }
-
-                Lampa.Controller.toggle("settings_component");
-              },
-              onBack: () => {
-                Lampa.Controller.toggle("settings_component");
-              },
+          // Используем встроенный Lampa.Select вместо кастомного модального окна
+          const items = [];
+          for (let i = 0; i < result.players.length; i++) {
+            const player = result.players[i];
+            items.push({
+              title: player.name,
+              subtitle: player.path,
+              value: player.id,
+              selected: player.isDefault,
             });
-          },
-        });
-      }
+          }
+
+          Lampa.Select.show({
+            title: "Выберите плеер по умолчанию",
+            items: items,
+            onSelect: async (item) => {
+              Lampa.Loading.start(() => {}, `Выбор ${item.title}...`);
+
+              const saveResult =
+                await window.electronAPI.player.setDefaultAndSave(item.value);
+
+              Lampa.Loading.stop();
+
+              if (saveResult.success) {
+                Lampa.Noty.show(`Выбран плеер: ${item.title}`, "success", 3000);
+                Lampa.Settings.update();
+              } else {
+                Lampa.Noty.show("Ошибка при выборе плеера", "error", 3000);
+              }
+
+              Lampa.Controller.toggle("settings_component");
+            },
+            onBack: () => {
+              Lampa.Controller.toggle("settings_component");
+            },
+          });
+        },
+      });
       settingsManager.apply();
     });
 

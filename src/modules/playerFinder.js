@@ -33,6 +33,38 @@ const PLAYERS = {
       },
     },
   },
+  mpv: {
+    name: "mpv",
+    description: "mpv media player",
+    platforms: {
+      win32: { paths: [] },
+      darwin: {
+        paths: [
+          "/opt/homebrew/bin/mpv",
+          "/usr/local/bin/mpv",
+          "/Applications/mpv.app/Contents/MacOS/mpv",
+        ],
+      },
+      linux: { paths: ["/usr/bin/mpv", "/usr/local/bin/mpv", "/snap/bin/mpv"] },
+    },
+  },
+  iina: {
+    name: "IINA",
+    description: "IINA (macOS)",
+    platforms: {
+      win32: { paths: [] },
+      darwin: {
+        paths: [
+          "/Applications/IINA.app/Contents/MacOS/iina-cli",
+          path.join(
+            process.env.HOME || "",
+            "Applications/IINA.app/Contents/MacOS/iina-cli",
+          ),
+        ],
+      },
+      linux: { paths: [] },
+    },
+  },
   mpc_hc: {
     name: "MPC-HC",
     description: "Media Player Classic Home Cinema",

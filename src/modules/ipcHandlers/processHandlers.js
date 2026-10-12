@@ -25,6 +25,7 @@ const WHITELIST = {
     "quicktime player",
     "wmplayer",
     "iina",
+    "iina-cli",
     "elmedia player",
     "movist",
     "infuse",

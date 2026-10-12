@@ -6,11 +6,19 @@ const { configurePortableProfile } = require("./modules/portablePaths");
 // Resolve portable profile before loading modules which initialize electron-store.
 try {
   const profile = configurePortableProfile(app);
-  record("profile", profile ? "portable: " + profile : "installed: " + app.getPath("userData"));
+  record(
+    "profile",
+    profile ? "portable: " + profile : "installed: " + app.getPath("userData"),
+  );
 } catch (error) {
-  fatal("Не удалось создать профиль приложения. Проверьте права на папку Portable и свободную память.", error);
+  fatal(
+    "Не удалось создать профиль приложения. Проверьте права на папку Portable и свободную память.",
+    error,
+  );
   process.exit(1);
 }
+
+require("./modules/runtimeLogging");
 
 // Force a real on-disk profile during the first launch. Tests and users must
 // be able to distinguish a successfully started Portable from an EXE that
@@ -19,10 +27,13 @@ const fs = require("node:fs");
 const store = require("./modules/storeManager");
 if (!fs.existsSync(store.path)) {
   try {
-    store.set("lampaUrl", store.get("lampaUrl", "http://lampa.mx"));
+    store.set("lampaUrl", store.get("lampaUrl", ""));
     record("created new profile config", store.path);
   } catch (error) {
-    fatal("Не удалось записать config.json. Проверьте права на папку приложения.", error);
+    fatal(
+      "Не удалось записать config.json. Проверьте права на папку приложения.",
+      error,
+    );
     process.exit(1);
   }
 }

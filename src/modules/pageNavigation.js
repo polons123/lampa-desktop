@@ -1,4 +1,4 @@
-const DEFAULT_LAMPA_URL = "http://lampa.mx";
+const DEFAULT_LAMPA_URL = "";
 
 function normalizeHttpUrl(value) {
   if (typeof value !== "string" || !value.trim()) {

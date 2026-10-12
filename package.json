@@ -41,7 +41,7 @@
   "devDependencies": {
     "@eslint/js": "9.39.4",
     "commit-and-tag-version": "12.7.3",
-    "electron": "44.4.4",
+    "electron": "44.7.0",
     "electron-builder": "26.15.3",
     "eslint": "9.39.4",
     "eslint-config-prettier": "10.1.8",
@@ -54,7 +54,7 @@
   },
   "license": "MIT",
   "build": {
-    "electronVersion": "44.4.4",
+    "electronVersion": "44.7.0",
     "electronDist": ".cache/electron-ac3-eac3",
     "extraResources": [
       {

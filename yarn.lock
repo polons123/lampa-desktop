@@ -1615,9 +1615,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"electron@npm:44.4.4":
-  version: 44.4.4
-  resolution: "electron@npm:44.4.4"
+"electron@npm:44.7.0":
+  version: 44.7.0
+  resolution: "electron@npm:44.7.0"
   dependencies:
     "@electron-internal/extract-zip": "npm:^1.0.1"
     "@electron/get": "npm:^5.0.0"
@@ -1625,7 +1625,7 @@ __metadata:
   bin:
     electron: cli.js
     install-electron: install.js
-  checksum: 10c0/276e8cd6352530ebbf46b85a9dddfc7fd9f681606733adcae8ecd42c7f1eb4dcaf60843436751e9775a90ee2efe08a1a845777078dd530c20edf414ebedf582f
+  checksum: 10c0/107e1e5ac1d8a00499d6fbeb850743d0485c1fc65c024159e28f3078e170c9a17ea50dca987c05acfd0f9b03db77442bb4dca44d6065da3ce7f98cedeba2ee96
   languageName: node
   linkType: hard
 
@@ -2749,7 +2749,7 @@ __metadata:
   dependencies:
     "@eslint/js": "npm:9.39.4"
     commit-and-tag-version: "npm:12.7.3"
-    electron: "npm:44.4.4"
+    electron: "npm:44.7.0"
     electron-builder: "npm:26.15.3"
     electron-store: "npm:11.0.2"
     electron-updater: "npm:6.8.9"

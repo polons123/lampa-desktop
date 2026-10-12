@@ -96,3 +96,7 @@ out/
 .idea
 .vscode
 dist
+
+# Local rollback copies and native build output
+backups
+native/mpv-bridge/build

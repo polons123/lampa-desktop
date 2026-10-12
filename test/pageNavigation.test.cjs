@@ -16,7 +16,8 @@ test("accepts any full HTTP or HTTPS URL", () => {
     normalizeHttpUrl("https://example.net:8443/app?card=12#player"),
     "https://example.net:8443/app?card=12#player",
   );
-  assert.equal(DEFAULT_LAMPA_URL, "http://lampa.mx");
+  // No built-in server: the first launch asks for the address.
+  assert.equal(DEFAULT_LAMPA_URL, "");
 });
 
 test("rejects unsupported protocols and malformed URLs", () => {
@@ -101,12 +102,19 @@ test("failed URL goes straight to local correction screen without automatic fall
   );
   const editor = fs.readFileSync(path.join(root, "recovery.html"), "utf8");
   assert.match(manager, /createNavigationFallback/);
-  assert.match(manager, /loadFile\(path\.join\(__dirname, "\.\.", "recovery\.html"\)/);
+  assert.match(
+    manager,
+    /loadFile\(path\.join\(__dirname, "\.\.", "recovery\.html"\)/,
+  );
   assert.match(editor, /id="recovery-form"/);
-  assert.match(editor, /id="default"/);
+  assert.doesNotMatch(editor, /id="default"/);
+  assert.match(manager, /showRecoveryState\("setup", ""\)/);
   assert.match(editor, /id="retry"/);
   assert.doesNotMatch(fallback, /store\.set|EMERGENCY_LAMPA_URL/);
-  assert.doesNotMatch(manager + fallback, /createLoadFailureUrl|document\.write/);
+  assert.doesNotMatch(
+    manager + fallback,
+    /createLoadFailureUrl|document\.write/,
+  );
 });
 
 test("URL store no longer reloads BrowserWindow behind controller", () => {
@@ -140,16 +148,22 @@ test("readiness requires the actual Lampa interface, not just a global", () => {
 
 test("loading keeps recovery panel visible until the remote Lampa UI is ready", () => {
   const root = path.join(__dirname, "..", "src");
-  const manager = fs.readFileSync(path.join(root, "modules/windowManager.js"), "utf8");
-  const navigation = fs.readFileSync(path.join(root, "modules/navigationFallback.js"), "utf8");
+  const manager = fs.readFileSync(
+    path.join(root, "modules/windowManager.js"),
+    "utf8",
+  );
+  const navigation = fs.readFileSync(
+    path.join(root, "modules/navigationFallback.js"),
+    "utf8",
+  );
   const editor = fs.readFileSync(path.join(root, "recovery.html"), "utf8");
-  assert.match(manager, /showRecoveryState\("loading", url\)/);
+  assert.match(manager, /setRecoveryState\("loading", url\)/);
   assert.match(manager, /setRecoveryState\("rendering", url\)/);
   assert.match(manager, /closeRecoveryPanel\(\)/);
   assert.match(navigation, /window\.webContents\.on\("dom-ready"/);
   assert.match(navigation, /RENDER_TIMEOUT_MS = 20000/);
   assert.match(navigation, /STARTUP_TIMEOUT_MS = 5000/);
-  assert.match(editor, /Пробуем открыть сервер/);
+  assert.match(editor, /Проверяем указанный сервер/);
   assert.match(editor, /window\.recoveryAPI\.onState\(showState\)/);
 });
 

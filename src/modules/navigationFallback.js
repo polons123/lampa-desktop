@@ -49,7 +49,9 @@ function isSameNavigation(actual, expected) {
     const b = new URL(expected);
     if (a.hostname === b.hostname && a.port === b.port) return true;
     const official = new Set(["lampa.mx", "cf.lampa.mx"]);
-    return !a.port && !b.port && official.has(a.hostname) && official.has(b.hostname);
+    return (
+      !a.port && !b.port && official.has(a.hostname) && official.has(b.hostname)
+    );
   } catch {
     return false;
   }
@@ -84,9 +86,11 @@ function createNavigationFallback(
   }
 
   function isCurrent(id) {
-    return current?.id === id &&
+    return (
+      current?.id === id &&
       !window.isDestroyed() &&
-      !window.webContents.isDestroyed();
+      !window.webContents.isDestroyed()
+    );
   }
 
   function fail(id, error) {
@@ -96,7 +100,7 @@ function createNavigationFallback(
     current = null;
     console.warn("Lampa URL недоступен:", failedUrl, error);
     // Crucially, do not rewrite lampaUrl and do not load a different host.
-    // Let the user edit the exact attempted URL or choose lampa.mx explicitly.
+    // Let the user edit the exact attempted server URL.
     onUnavailable(error, failedUrl);
   }
 
@@ -110,7 +114,10 @@ function createNavigationFallback(
     // frequently need longer than five seconds to initialize their scripts.
     onDocumentLoaded(current.url);
     timeout = setTimeout(() => {
-      fail(id, new Error("Страница ответила, но интерфейс Lampa не запустился."));
+      fail(
+        id,
+        new Error("Страница ответила, но интерфейс Lampa не запустился."),
+      );
     }, renderTimeoutMs);
     void checkReady(id);
   }
@@ -128,7 +135,13 @@ function createNavigationFallback(
       const loadMs = Date.now() - current.startedAt;
       clearTimers();
       current = null;
-      console.info("Lampa URL открыт:", window.webContents.getURL(), "за", loadMs, "мс");
+      console.info(
+        "Lampa URL открыт:",
+        window.webContents.getURL(),
+        "за",
+        loadMs,
+        "мс",
+      );
       onReady();
       return;
     }
@@ -138,7 +151,10 @@ function createNavigationFallback(
       const elapsed = Date.now() - current.documentAt;
       const limit = probe.scripts === 0 ? emptyDocumentMs : unrecognizedPageMs;
       if (elapsed >= limit) {
-        fail(id, new Error("По этому адресу открылась страница, но это не Lampa."));
+        fail(
+          id,
+          new Error("По этому адресу открылась страница, но это не Lampa."),
+        );
         return;
       }
     }
@@ -153,7 +169,10 @@ function createNavigationFallback(
       clearTimers();
       current = null;
       lastTarget = String(value ?? "");
-      onUnavailable(new Error("Укажите полный HTTP или HTTPS адрес."), lastTarget);
+      onUnavailable(
+        new Error("Укажите полный HTTP или HTTPS адрес."),
+        lastTarget,
+      );
       return;
     }
 
@@ -179,8 +198,12 @@ function createNavigationFallback(
         // Chromium may reject the NEW loadURL promise with an old navigation's
         // ERR_ABORTED when a previously failed page is replaced quickly.
         // That is not evidence that the new server is unavailable.
-        if (error?.errno === -3 || error?.code === "ERR_ABORTED" ||
-            (error?.url && !isSameNavigation(error.url, target))) return;
+        if (
+          error?.errno === -3 ||
+          error?.code === "ERR_ABORTED" ||
+          (error?.url && !isSameNavigation(error.url, target))
+        )
+          return;
         fail(id, error);
       });
     } catch (error) {
@@ -195,11 +218,18 @@ function createNavigationFallback(
   // and ignores failed images, subtitles, scripts and other subresources.
   const request = window.webContents.session.webRequest;
   request.onResponseStarted({ urls: ["<all_urls>"] }, (details) => {
-    if (!current || details.resourceType !== "mainFrame" ||
-        details.webContentsId !== window.webContents.id ||
-        !isSameNavigation(details.url, current.url)) return;
+    if (
+      !current ||
+      details.resourceType !== "mainFrame" ||
+      details.webContentsId !== window.webContents.id ||
+      !isSameNavigation(details.url, current.url)
+    )
+      return;
     if (details.statusCode >= 400) {
-      fail(current.id, new Error("Сервер вернул ошибку HTTP " + details.statusCode + "."));
+      fail(
+        current.id,
+        new Error("Сервер вернул ошибку HTTP " + details.statusCode + "."),
+      );
     }
   });
 
@@ -217,7 +247,10 @@ function createNavigationFallback(
     (_event, code, description, url, isMainFrame) => {
       if (isMainFrame === false || code === -3 || !current) return;
       if (url && !isSameNavigation(url, current.url)) return;
-      fail(current.id, new Error("Ошибка соединения " + code + ": " + description));
+      fail(
+        current.id,
+        new Error("Ошибка соединения " + code + ": " + description),
+      );
     },
   );
 
