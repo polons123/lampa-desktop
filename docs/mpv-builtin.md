@@ -39,7 +39,7 @@ player. The built-in player uses **libmpv**, the engine IINA is built on.
 | Native addon (libmpv render API drawing into an `NSOpenGLView` behind the web view; events and log messages to JS)                          | `native/mpv-bridge/`                                                                                  |
 | Main-process player module, addon loading, mpv options                                                                                      | `src/modules/mpvPlayer.js`                                                                            |
 | IPC handlers                                                                                                                                | `src/modules/ipcHandlers/mpvHandlers.js`                                                              |
-| Local HTTP bridge using Chromium's network stack (`net.fetch`), HLS playlist rewriting, Range support                                       | `src/modules/mpvProxy.js`                                                                             |
+| User `mpv.conf` (file in the profile folder, parser, blocked options)                                                                       | `src/modules/mpvConfig.js`                                                                            |
 | Renderer adapter: a Lampa "tube" that makes mpv look like a `<video>` element; settings toggle; poster screen; backdrop hiding; "mpv" badge | `src/mpvTube.js`                                                                                      |
 | Plumbing                                                                                                                                    | `src/preload.js`, `src/modules/pluginHandler.js`, `src/modules/windowManager.js` (transparent window) |
 
@@ -69,8 +69,12 @@ Behaviour:
   torrents). Other external players (IINA, Infuse…) launch normally.
 - Lampa's own title, panel, tracks, subtitles, resume and playlist work unchanged
   because the adapter provides the `<video>` API Lampa expects.
-- Streams from public hosts go through the local proxy (fixes CDNs that reject
-  mpv's own TLS client). Localhost and LAN addresses (TorrServer, NAS) play directly.
+- mpv connects to streams directly with its own (ffmpeg) network stack; there is no
+  local proxy. HTTPS is verified against the macOS CA bundle (`/etc/ssl/cert.pem`)
+  and dropped connections are retried a bounded number of times. mpv does not use
+  the macOS system proxy; to route it through one, add `http-proxy=…` to the
+  mpv.conf editor. The Lampa page and the HTML5 player (Chromium) do follow the
+  system proxy. The client has no proxy setting of its own.
 - While a stream opens, a poster screen (backdrop, title, spinner) is shown; it is
   removed at the first picture. Clicking it cancels.
 - While mpv plays, large full-screen elements at or below the player's layer
@@ -88,8 +92,8 @@ Behaviour:
 
 - Hardware decoding (VideoToolbox) on a real 3832×1600 H.264 stream, 0 dropped
   frames, A/V sync about 0.
-- zerocdn and srvkp HLS streams (failed with mpv's own network stack) play through
-  the proxy; seeking 30 minutes in worked.
+- zerocdn and srvkp HLS streams play in mpv (they failed earlier, see the TLS note
+  below); seeking 30 minutes in worked.
 - On local test files: pause/resume, seek, volume, speed, audio-track switching,
   subtitle show/hide, AC3 audio, fullscreen and resize.
 - Player choice (checked in the running client): an online stream plays in the
@@ -119,8 +123,11 @@ Behaviour:
 - `ao/coreaudio: unable to set the input channel layout` is logged at each file
   start. Audio plays; cause not investigated.
 - One unexplained, non-reproduced failure of pause→play in an early test run.
-- The root cause of mpv's own TLS failures on those CDNs is unknown (Chromium's
-  works).
+- Cause of the earlier TLS failures on those CDNs: Homebrew's `openssl@4` had no
+  certificate store (`/opt/homebrew/etc/openssl@4` missing after an interrupted
+  install), so ffmpeg could not verify any HTTPS host. Fixed on this Mac with
+  `brew postinstall openssl@4`; the app also points mpv at `/etc/ssl/cert.pem`.
+  A fresh Mac with a healthy Homebrew should not hit it.
 - Not available on the mpv path: picture-in-picture, volume normalization,
   zoom/fill picture modes.
 - OpenGL is deprecated by Apple (works today).
