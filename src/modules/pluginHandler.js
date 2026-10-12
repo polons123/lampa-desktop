@@ -60,6 +60,8 @@ function injectPlugin(mainWindow) {
         "\n" +
         readFileSync(path.join(__dirname, "..", "playbackCover.js"), "utf-8") +
         "\n" +
+        readFileSync(path.join(__dirname, "..", "toast.js"), "utf-8") +
+        "\n" +
         readFileSync(path.join(__dirname, "..", "mpvTube.js"), "utf-8") +
         "\n" +
         readFileSync(path.join(__dirname, "..", "downloads.js"), "utf-8"),

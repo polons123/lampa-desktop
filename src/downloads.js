@@ -8,13 +8,69 @@
   if (!api || !Lampa?.Player || window.desktopDownloadsInstalled) return;
   window.desktopDownloadsInstalled = true;
 
+  // Settings page «MPV и Загрузчик», shown under «Плеер». Created by whichever of
+  // the two scripts (mpvTube.js, downloads.js) loads first.
+  const SETTINGS_COMPONENT = "mpv_downloader";
+  function ensureSettingsComponent() {
+    if (window.desktopMpvDlComponent) return;
+    window.desktopMpvDlComponent = true;
+    Lampa.Lang.add({
+      app_settings_mpv_dl: { ru: "MPV и Загрузчик", en: "MPV and Downloader" },
+    });
+    Lampa.SettingsApi.addComponent({
+      component: SETTINGS_COMPONENT,
+      name: Lampa.Lang.translate("app_settings_mpv_dl"),
+      icon:
+        '<svg viewBox="0 0 24 24" width="100%" height="100%" fill="currentColor">' +
+        '<path d="M8 5v14l11-7L8 5zM5 20h14v2H5z"/></svg>',
+    });
+    // New pages are appended to the end of the list; move this one under «Плеер».
+    Lampa.Settings.listener.follow("open", (event) => {
+      if (event.name !== "main") return;
+      const mine = event.body.find(`[data-component="${SETTINGS_COMPONENT}"]`);
+      const player = event.body.find('[data-component="player"]');
+      if (mine.length && player.length) player.after(mine);
+    });
+  }
+  ensureSettingsComponent();
+
   const LIST_BUTTON = "desktop_downloads_list";
   const TOOL_SETTING = "desktop_download_tool";
+  const STATUS_ROW = "desktop_download_status";
+  const CANCEL_BUTTON = "desktop_download_cancel";
   const t = (key) => Lampa.Lang.translate(key);
+  const toast = (text) =>
+    window.desktopToast ? window.desktopToast(text) : Lampa.Noty.show(text);
   const jobs = new Map(); // id -> latest snapshot from the main process
   let render = null; // redraws the open list, if any
 
   Lampa.Lang.add({
+    app_downloads_cancel_current: {
+      ru: "Отменить загрузку",
+      en: "Cancel download",
+    },
+    app_downloads_cancel_current_descr: {
+      ru: "Останавливает загрузку из строки выше и удаляет недокачанный файл.",
+      en: "Stops the download shown above and removes the partial file.",
+    },
+    app_downloads_nothing: {
+      ru: "Нет активной загрузки",
+      en: "No active download",
+    },
+    app_downloads_canceled_note: {
+      ru: "Загрузка отменена: ",
+      en: "Canceled: ",
+    },
+    app_downloads_menu: { ru: "Загрузить", en: "Download" },
+    app_downloads_menu_descr: {
+      ru: "Скачать на компьютер вместо просмотра",
+      en: "Save to this computer instead of watching",
+    },
+    app_downloads_pick: {
+      ru: "Выберите файл или качество: оно будет скачано вместо просмотра",
+      en: "Pick the file or quality: it will be downloaded instead of played",
+    },
+    app_downloads_status: { ru: "Текущая загрузка", en: "Current download" },
     app_downloads_title: { ru: "Загрузки", en: "Downloads" },
     app_downloads_descr: {
       ru: "Фильмы, скачанные на компьютер, сохраняются в ~/Movies/Lampa.",
@@ -89,13 +145,14 @@
     return tool && tool !== "auto" ? String(tool) : undefined;
   }
 
-  async function startDownload() {
-    const work = Lampa.Player.playdata?.();
+  async function startDownload(data) {
+    const work = data || Lampa.Player.playdata?.();
+    if (!work) return toast(t("app_downloads_no_url"));
     // hls.js shows a blob: URL in the element; the original link is in the data.
     const raw = work?.url;
     const url = (raw && Lampa.Torserver?.toPlayUrl?.(raw)) || raw;
     if (!url || !/^https?:\/\//i.test(String(url)))
-      return Lampa.Noty.show(t("app_downloads_no_url"));
+      return toast(t("app_downloads_no_url"));
     const title = titleFor(work);
     const result = await api
       .start({
@@ -106,10 +163,8 @@
       })
       .catch(() => null);
     if (!result?.ok)
-      return Lampa.Noty.show(
-        t("app_downloads_failed") + (result?.error || title),
-      );
-    Lampa.Noty.show(t("app_downloads_started") + title);
+      return toast(t("app_downloads_failed") + (result?.error || title));
+    toast(t("app_downloads_started") + title);
   }
 
   // Progress next to the button: «42%» while the video that is playing is being
@@ -141,7 +196,7 @@
     jobs.set(job.id, job);
     if (["done", "error"].includes(job.status) && !noted.has(job.id)) {
       noted.add(job.id);
-      Lampa.Noty.show(
+      toast(
         t(
           job.status === "done" ? "app_downloads_done" : "app_downloads_failed",
         ) +
@@ -151,11 +206,78 @@
     }
     render?.();
     updateBadge();
+    updateStatusRow();
   });
   api
     .list()
     .then((list) => list.forEach((job) => jobs.set(job.id, job)))
     .catch(() => {});
+
+  // --- «Загрузить» in the context menu of online sources and torrents --------
+  // The menu is built by Lampa (long press / right click on an item) and does
+  // not expose the item's link. So «Загрузить» opens the item as usual and the
+  // next Player.play with a real link becomes a download instead of playback.
+  const PENDING_MS = 90000;
+  let pending = null; // { until }
+
+  for (const method of ["play", "iptv"]) {
+    const original = Lampa.Player[method];
+    if (typeof original !== "function") continue;
+    Lampa.Player[method] = function (data) {
+      if (
+        pending &&
+        Date.now() < pending.until &&
+        /^https?:\/\//i.test(String(data?.url || ""))
+      ) {
+        pending = null;
+        void startDownload(data);
+        return;
+      }
+      return original.apply(this, arguments);
+    };
+  }
+
+  const selectShow = Lampa.Select.show;
+  Lampa.Select.show = function (params) {
+    try {
+      const focus = document.querySelector(".selector.focus");
+      const isAction =
+        params?.title === Lampa.Lang.translate("title_action") ||
+        params?.title === "Действие";
+      // Only the item menus of online sources and torrents.
+      if (
+        isAction &&
+        Array.isArray(params.items) &&
+        focus &&
+        /torrent-item|online/.test(focus.className)
+      ) {
+        const back = Lampa.Controller.enabled?.().name;
+        const handler = params.onSelect;
+        params = {
+          ...params,
+          items: [
+            {
+              title: t("app_downloads_menu"),
+              subtitle: t("app_downloads_menu_descr"),
+              download: true,
+            },
+            ...params.items,
+          ],
+          onSelect: (item) => {
+            if (!item?.download) return handler?.(item);
+            if (back) Lampa.Controller.toggle(back);
+            pending = { until: Date.now() + PENDING_MS };
+            toast(t("app_downloads_pick"));
+            // Let the menu close first, then open the item as a click would.
+            setTimeout(() => window.$?.(focus).trigger("hover:enter"), 150);
+          },
+        };
+      }
+    } catch (error) {
+      console.error("[downloads] menu item failed:", String(error));
+    }
+    return selectShow.call(this, params);
+  };
 
   // --- Player panel button -------------------------------------------------
   function addPanelButton() {
@@ -324,30 +446,106 @@
     document.body.appendChild(overlay);
   }
 
-  Lampa.SettingsApi.addParam({
-    component: "player",
-    param: {
-      name: TOOL_SETTING,
-      type: "select",
-      values: {
-        auto: t("app_downloads_tool_auto"),
-        "yt-dlp": "yt-dlp",
-        curl: "curl",
+  // A live row with the film being downloaded and its percentage.
+  let statusRow = null;
+  // The download shown in the row: the latest running one, else the last one.
+  function currentJob() {
+    const all = [...jobs.values()].sort((a, b) => b.id - a.id);
+    // A canceled download leaves the row empty rather than keeping its percent.
+    return (
+      all.find((item) => ["active", "queued"].includes(item.status)) ||
+      all.find((item) => item.status !== "canceled")
+    );
+  }
+  async function cancelCurrent() {
+    const job = currentJob();
+    if (!job || !["active", "queued"].includes(job.status))
+      return toast(t("app_downloads_nothing"));
+    const ok = await api.cancel(job.id).catch(() => false);
+    // Do not wait for the update event: clear the percent right away.
+    if (ok)
+      jobs.set(job.id, {
+        ...job,
+        status: "canceled",
+        progress: null,
+        speed: 0,
+      });
+    updateStatusRow();
+    updateBadge();
+    toast(
+      (ok ? t("app_downloads_canceled_note") : t("app_downloads_failed")) +
+        job.title,
+    );
+  }
+  function updateStatusRow() {
+    if (!statusRow) return;
+    const job = currentJob();
+    const name = statusRow.find(".settings-param__name");
+    const descr = statusRow.find(".settings-param__descr");
+    if (!job) {
+      name.text(t("app_downloads_status"));
+      return descr.text(t("app_downloads_empty"));
+    }
+    const percent =
+      job.status === "done"
+        ? "✓"
+        : job.status === "error"
+          ? "✗"
+          : job.progress === null
+            ? "…"
+            : Math.round(job.progress * 100) + "%";
+    name.text(`${job.title} — ${percent}`);
+    descr.text(describe(job));
+  }
+  // The mpv settings are registered once mpv's availability is known (in
+  // mpvTube.js); register after them so they stay first on the page.
+  function registerSettings() {
+    Lampa.SettingsApi.addParam({
+      component: SETTINGS_COMPONENT,
+      param: { name: STATUS_ROW, type: "static" },
+      field: { name: t("app_downloads_status"), description: "" },
+      onRender: (element) => {
+        statusRow = element;
+        updateStatusRow();
       },
-      default: "auto",
-    },
-    field: {
-      name: t("app_downloads_tool"),
-      description: t("app_downloads_tool_descr"),
-    },
-  });
-  Lampa.SettingsApi.addParam({
-    component: "player",
-    param: { name: LIST_BUTTON, type: "button" },
-    field: {
-      name: t("app_downloads_title"),
-      description: t("app_downloads_descr"),
-    },
-    onChange: () => void openList(),
-  });
+    });
+    Lampa.SettingsApi.addParam({
+      component: SETTINGS_COMPONENT,
+      param: { name: CANCEL_BUTTON, type: "button" },
+      field: {
+        name: t("app_downloads_cancel_current"),
+        description: t("app_downloads_cancel_current_descr"),
+      },
+      onChange: () => void cancelCurrent(),
+    });
+    Lampa.SettingsApi.addParam({
+      component: SETTINGS_COMPONENT,
+      param: {
+        name: TOOL_SETTING,
+        type: "select",
+        values: {
+          auto: t("app_downloads_tool_auto"),
+          "yt-dlp": "yt-dlp",
+          curl: "curl",
+        },
+        default: "auto",
+      },
+      field: {
+        name: t("app_downloads_tool"),
+        description: t("app_downloads_tool_descr"),
+      },
+    });
+    Lampa.SettingsApi.addParam({
+      component: SETTINGS_COMPONENT,
+      param: { name: LIST_BUTTON, type: "button" },
+      field: {
+        name: t("app_downloads_title"),
+        description: t("app_downloads_descr"),
+      },
+      onChange: () => void openList(),
+    });
+  }
+  Promise.resolve(window.electronAPI?.mpv?.available?.())
+    .catch(() => false)
+    .then(() => setTimeout(registerSettings, 0));
 })();

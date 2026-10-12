@@ -48,9 +48,9 @@ Behaviour:
 - **Torrents:** when Lampa's torrent player is «Встроенный» (shown as
   «Встроенный (MPV)»), playback always goes through the built-in mpv.
 - **Online and IPTV:** use Lampa's HTML5 player by default. Switch to mpv with
-  Settings → Player → «Использовать mpv для онлайн» (right below «Тип плеера») (`mpv_online_enabled`, default
+  Settings → «MPV и Загрузчик» → «Использовать mpv для онлайн» (`mpv_online_enabled`, default
   off; applies the next time a video opens).
-- **mpv.conf:** Settings → Player → «Конфигурация mpv (mpv.conf)» opens an editor
+- **mpv.conf:** Settings → «MPV и Загрузчик» → «Конфигурация mpv (mpv.conf)» opens an editor
   where you paste the contents of an mpv.conf. It is stored as
   `~/Library/Application Support/Lampa/mpv.conf` and stays until you change it
   (clearing the text deletes the file). It is applied before every video and wins
@@ -93,7 +93,7 @@ applyProfile`.
 - While mpv plays, large full-screen elements at or below the player's layer
   (modals, plugin backdrops) are hidden and restored afterwards.
 - A badge next to the resolution shows `mpv · VideoToolbox` (or `mpv · software`).
-- **Buffer:** Settings → Player → «Буфер mpv» (15 s / 30 s / 60 s default / 2 min /
+- **Buffer:** Settings → «MPV и Загрузчик» → «Буфер mpv» (15 s / 30 s / 60 s default / 2 min /
   5 min, `mpv_buffer_secs`), right below the online switch. It is mpv's demuxer
   cache in **RAM** (`cache=auto`, `cache-on-disk=no`; nothing is written to disk),
   capped at 512 MiB ahead (`demuxer-max-bytes`) plus mpv's default 50 MiB behind,

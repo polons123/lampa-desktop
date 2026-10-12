@@ -8,14 +8,14 @@ Files are saved to `~/Movies/Lampa` (the folder is created on demand) as
 - While a video plays, press the **download** button (arrow) in Lampa's player
   panel, next to the settings button. It downloads the link Lampa is playing
   (TorrServer streams included).
-- Settings → Player → **Загрузки** lists downloads with progress, speed, cancel,
+- Settings → **MPV и Загрузчик** → **Загрузки** lists downloads with progress, speed, cancel,
   retry, «Показать» (Finder) and «Открыть папку».
 
 ## How it works
 
 - `src/modules/downloader.js` (main process). At most two downloads run at once,
   the rest wait in a queue. Downloads go to an **external program**, chosen in
-  Settings → Player → «Загрузчик» (Auto = yt-dlp, else curl):
+  Settings → «MPV и Загрузчик» → «Загрузчик» (Auto = yt-dlp, else curl):
   - **yt-dlp** (`brew install yt-dlp`): direct files and HLS/DASH playlists
     (merged into mkv/mp4). Progress comes from its `--progress-template`;
     headers are passed with `--add-header`; an interrupted download resumes.

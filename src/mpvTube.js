@@ -8,6 +8,31 @@
   if (!api || !Lampa?.PlayerVideo?.registerTube || window.desktopMpvInstalled)
     return;
   window.desktopMpvInstalled = true;
+
+  // Settings page «MPV и Загрузчик», shown under «Плеер». Created by whichever of
+  // the two scripts (mpvTube.js, downloads.js) loads first.
+  const SETTINGS_COMPONENT = "mpv_downloader";
+  function ensureSettingsComponent() {
+    if (window.desktopMpvDlComponent) return;
+    window.desktopMpvDlComponent = true;
+    Lampa.Lang.add({
+      app_settings_mpv_dl: { ru: "MPV и Загрузчик", en: "MPV and Downloader" },
+    });
+    Lampa.SettingsApi.addComponent({
+      component: SETTINGS_COMPONENT,
+      name: Lampa.Lang.translate("app_settings_mpv_dl"),
+      icon:
+        '<svg viewBox="0 0 24 24" width="100%" height="100%" fill="currentColor">' +
+        '<path d="M8 5v14l11-7L8 5zM5 20h14v2H5z"/></svg>',
+    });
+    // New pages are appended to the end of the list; move this one under «Плеер».
+    Lampa.Settings.listener.follow("open", (event) => {
+      if (event.name !== "main") return;
+      const mine = event.body.find(`[data-component="${SETTINGS_COMPONENT}"]`);
+      const player = event.body.find('[data-component="player"]');
+      if (mine.length && player.length) player.after(mine);
+    });
+  }
   // The native addon exists only on macOS builds that bundled it.
   api
     .available()
@@ -15,6 +40,7 @@
     .catch(() => {});
 
   function install() {
+    ensureSettingsComponent();
     const ONLINE_SETTING = "mpv_online_enabled";
     const BUFFER_SETTING = "mpv_buffer_secs";
     const CONFIG_BUTTON = "mpv_config_edit";
@@ -937,35 +963,9 @@
     Lampa.Player.listener.follow("ready", watchPanel);
     Lampa.Player.listener.follow("start", watchPanel);
 
-    // Lampa's own notice is a bright full-width bar; this one is a small dark
-    // translucent box with white text, like the rest of Lampa's overlays.
+    // Small dark notice shared with the downloads (src/toast.js).
     function showToast(text) {
-      if (!document.getElementById("mpv-toast-style")) {
-        const style = document.createElement("style");
-        style.id = "mpv-toast-style";
-        style.textContent = `
-          .mpv-toast {
-            position: fixed; left: 50%; bottom: 9em; z-index: 99;
-            max-width: 80%; padding: 0.9em 1.6em; border-radius: 1em;
-            background: rgba(0, 0, 0, 0.7); color: #fff; line-height: 1.4;
-            font-size: 1.2em; text-align: center; pointer-events: none;
-            -webkit-backdrop-filter: blur(1em); backdrop-filter: blur(1em);
-            transform: translate(-50%, 1em); opacity: 0;
-            transition: opacity 0.3s, transform 0.3s;
-          }
-          .mpv-toast--visible { transform: translate(-50%, 0); opacity: 1; }`;
-        document.head.appendChild(style);
-      }
-      document.querySelector(".mpv-toast")?.remove();
-      const box = document.createElement("div");
-      box.className = "mpv-toast";
-      box.textContent = text;
-      document.body.appendChild(box);
-      requestAnimationFrame(() => box.classList.add("mpv-toast--visible"));
-      setTimeout(() => {
-        box.classList.remove("mpv-toast--visible");
-        setTimeout(() => box.remove(), 400);
-      }, 3500);
+      window.desktopToast(text);
     }
 
     function switchToMpv(video, reason) {
@@ -1097,8 +1097,8 @@
         en: "mpv profile:",
       },
       app_settings_mpv_profile_none: {
-        ru: "Нет профилей mpv: создайте в Настройки → Плеер → Конфигурация mpv",
-        en: "No mpv profiles: create one in Settings → Player → mpv configuration",
+        ru: "Нет профилей mpv: создайте в Настройки → MPV и Загрузчик → Конфигурация mpv",
+        en: "No mpv profiles: create one in Settings → MPV and Downloader → mpv configuration",
       },
       app_settings_mpv_applied_live: {
         ru: "Применено к текущему видео",
@@ -1125,7 +1125,7 @@
       },
     });
     Lampa.SettingsApi.addParam({
-      component: "player",
+      component: SETTINGS_COMPONENT,
       param: { name: ONLINE_SETTING, type: "trigger", default: false },
       field: {
         name: Lampa.Lang.translate("app_settings_mpv_online"),
@@ -1133,7 +1133,7 @@
       },
     });
     Lampa.SettingsApi.addParam({
-      component: "player",
+      component: SETTINGS_COMPONENT,
       param: {
         name: BUFFER_SETTING,
         type: "select",
@@ -1152,25 +1152,13 @@
       },
     });
     Lampa.SettingsApi.addParam({
-      component: "player",
+      component: SETTINGS_COMPONENT,
       param: { name: CONFIG_BUTTON, type: "button" },
       field: {
         name: Lampa.Lang.translate("app_settings_mpv_config"),
         description: Lampa.Lang.translate("app_settings_mpv_config_descr"),
       },
       onChange: () => void openConfigEditor(),
-    });
-    // Added params are appended to the end of the page; put this one right
-    // after «Тип плеера» (before Lampa collects the focusable items).
-    Lampa.Settings.listener.follow("open", (event) => {
-      if (event.name !== "player") return;
-      const item = event.body.find(`[data-name="${ONLINE_SETTING}"]`);
-      const type = event.body.find('[data-name="player"]');
-      if (item.length && type.length) type.after(item);
-      const buffer = event.body.find(`[data-name="${BUFFER_SETTING}"]`);
-      if (buffer.length && item.length) item.after(buffer);
-      const config = event.body.find(`[data-name="${CONFIG_BUTTON}"]`);
-      if (config.length && buffer.length) buffer.after(config);
     });
   }
 })();
