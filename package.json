@@ -3,6 +3,7 @@
   "productName": "Lampa",
   "version": "1.6.0-ac3.21",
   "description": "Десктопное приложение-клиент для Lampa",
+  "homepage": "https://github.com/polons123/lampa-desktop",
   "repository": {
     "type": "git",
     "url": "https://github.com/ARST113/lampa-desktop"
@@ -52,9 +53,15 @@
     "prettier": "3.9.6"
   },
   "author": {
-    "name": "ARST113",
-    "url": "https://github.com/ARST113/lampa-desktop"
+    "name": "polons123",
+    "url": "https://github.com/polons123/lampa-desktop"
   },
+  "contributors": [
+    {
+      "name": "ARST113 (автор оригинального проекта)",
+      "url": "https://github.com/ARST113/lampa-desktop"
+    }
+  ],
   "license": "MIT",
   "build": {
     "electronVersion": "44.7.0",

@@ -1,5 +1,7 @@
 # Lampa Desktop
 
+> **Это форк** [ARST113/lampa-desktop](https://github.com/ARST113/lampa-desktop), поддерживаемый [polons123](https://github.com/polons123). Оригинальный проект и основная часть кода принадлежат ARST113. В форке добавлен встроенный плеер mpv для macOS (Apple Silicon), редактор адреса Lampa и конфигурация mpv.conf; подробности — в [docs/mpv-builtin.md](docs/mpv-builtin.md). Лицензия сохранена: см. [LICENSE](LICENSE).
+
 Неофициальный настольный клиент Lampa на Electron с поддержкой AC3/EAC3 и встроенных текстовых субтитров MKV.
 
 ## Скачать последнюю стабильную версию для Windows
