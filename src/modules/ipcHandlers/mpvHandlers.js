@@ -1,6 +1,8 @@
 // modules/ipcHandlers/mpvHandlers.js
 const { ipcMain } = require("electron");
+const { app } = require("electron");
 const mpv = require("../mpvPlayer");
+const mpvConfig = require("../mpvConfig");
 
 function registerMpvHandlers(getMainWindow) {
   ipcMain.handle("mpv:available", () => mpv.isAvailable());
@@ -26,6 +28,33 @@ function registerMpvHandlers(getMainWindow) {
     mpv.setProperty(String(name), value),
   );
   ipcMain.handle("mpv:stop", () => mpv.stop());
+
+  // mpv.conf: only the Lampa window itself may read or change it.
+  const fromMainWindow = (event) => {
+    const win = getMainWindow();
+    return Boolean(
+      win && !win.isDestroyed() && event.sender === win.webContents,
+    );
+  };
+  ipcMain.handle("mpv:config-get", (event) => {
+    if (!fromMainWindow(event)) return null;
+    const userData = app.getPath("userData");
+    return {
+      text: mpvConfig.read(userData),
+      path: mpvConfig.configPath(userData),
+    };
+  });
+  ipcMain.handle("mpv:config-set", (event, text) => {
+    if (!fromMainWindow(event)) return { ok: false, error: "forbidden" };
+    if (
+      typeof text !== "string" ||
+      Buffer.byteLength(text) > mpvConfig.MAX_BYTES
+    )
+      return { ok: false, error: "слишком большой текст" };
+    mpvConfig.write(app.getPath("userData"), text);
+    const { entries, ignored } = mpvConfig.parse(text);
+    return { ok: true, applied: entries.length, ignored };
+  });
 }
 
 module.exports = registerMpvHandlers;

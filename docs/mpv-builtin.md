@@ -45,9 +45,28 @@ player. The built-in player uses **libmpv**, the engine IINA is built on.
 
 Behaviour:
 
-- Replaces Lampa's «Встроенный» player **and** its «MPV» entry (an `mpv://` link
-  that nothing on macOS handles). Other external players (IINA, Infuse…) still
-  launch normally. Setting: Settings → Player → «Встроенный плеер mpv» (default on).
+- **Torrents:** when Lampa's torrent player is «Встроенный» (shown as
+  «Встроенный (MPV)»), playback always goes through the built-in mpv.
+- **Online and IPTV:** use Lampa's HTML5 player by default. Switch to mpv with
+  Settings → Player → «Использовать mpv для онлайн» (right below «Тип плеера») (`mpv_online_enabled`, default
+  off; applies the next time a video opens).
+- **mpv.conf:** Settings → Player → «Конфигурация mpv (mpv.conf)» opens an editor
+  where you paste the contents of an mpv.conf. It is stored as
+  `~/Library/Application Support/Lampa/mpv.conf` and stays until you change it
+  (clearing the text deletes the file). It is applied before every video and wins
+  over the app's own settings (e.g. `demuxer-readahead-secs` beats the buffer
+  setting). A line removed from the file is undone (the previous value is
+  restored). Supported: `option=value`, bare flags, `no-option`, `--option=value`,
+  list suffixes (`-add`, `-append`, …), `#` comment lines. Ignored: `[profile]`
+  sections and options that run code or break embedding (`script`, `include`,
+  `input-ipc-server`, `ytdl*`, `vo`, `wid`, …); ignored lines are listed after
+  saving.
+- **AC3/EAC3 fallback:** Chromium's HTML5 player cannot decode AC3/EAC3. If an
+  online stream plays without decoded audio (after about 1.5 s) or the HTML5 player
+  fails fatally, the same link is reopened in mpv inside the running player, at the
+  same position, with a short notice. One attempt per link.
+- The external «MPV» entry is removed from the player lists (online, IPTV,
+  torrents). Other external players (IINA, Infuse…) launch normally.
 - Lampa's own title, panel, tracks, subtitles, resume and playlist work unchanged
   because the adapter provides the `<video>` API Lampa expects.
 - Streams from public hosts go through the local proxy (fixes CDNs that reject
@@ -57,8 +76,13 @@ Behaviour:
 - While mpv plays, large full-screen elements at or below the player's layer
   (modals, plugin backdrops) are hidden and restored afterwards.
 - A badge next to the resolution shows `mpv · VideoToolbox` (or `mpv · software`).
-- mpv buffers further ahead (`demuxer-readahead-secs=60`) and resumes after a
-  stall only once about 8 s are queued (`cache-pause-wait=8`).
+- **Buffer:** Settings → Player → «Буфер mpv» (15 s / 30 s / 60 s default / 2 min /
+  5 min, `mpv_buffer_secs`), right below the online switch. It is mpv's demuxer
+  cache in **RAM** (`cache=auto`, `cache-on-disk=no`; nothing is written to disk),
+  capped at 512 MiB ahead (`demuxer-max-bytes`) plus mpv's default 50 MiB behind,
+  so very high bitrate streams get less than the chosen time. After an underrun
+  mpv resumes once about 8 s are queued (`cache-pause-wait=8`). Applies to the
+  next video.
 
 ## Verified
 
@@ -68,8 +92,14 @@ Behaviour:
   the proxy; seeking 30 minutes in worked.
 - On local test files: pause/resume, seek, volume, speed, audio-track switching,
   subtitle show/hide, AC3 audio, fullscreen and resize.
-- Address editor: open, Cancel, bad address (error shown), restore lampa.mx.
+- Player choice (checked in the running client): an online stream plays in the
+  HTML5 `<video>`; a play call with `torrent_hash` plays in mpv (VideoToolbox,
+  badge shown). The torrent case used an HLS URL, not a real TorrServer stream.
+- Address editor: open, Cancel, bad address (error shown), restore the previous address.
 - ESLint is clean on `src`.
+
+- AC3/EAC3 fallback on generated test clips (mp4 AC3, mp4 EAC3, mkv AC3, HLS
+  AC3): switches to mpv, AAC stays in HTML5. Not tried on real balancer streams.
 
 ## Not tested
 
@@ -94,10 +124,19 @@ Behaviour:
 - Not available on the mpv path: picture-in-picture, volume normalization,
   zoom/fill picture modes.
 - OpenGL is deprecated by Apple (works today).
-- Address editor: opening it within seconds of launch can leave it hidden. A new
-  address is stored before it is tried, so a typo persists until fixed.
-- The app still starts on `http://lampa.mx` by default (`DEFAULT_LAMPA_URL` in
-  `src/modules/pageNavigation.js`).
+- Address editor: opening it within seconds of launch can leave it hidden.
+- There is no default address: the first launch shows the address window
+  (`DEFAULT_LAMPA_URL` is empty). A new address is saved only after its page loads.
+
+## Setting up on another Mac (Apple Silicon)
+
+1. `brew install mpv` (libmpv comes from Homebrew) and Xcode Command Line Tools.
+2. Node 24 (`>=24 <25`), then `corepack enable`.
+3. In the repository: `yarn install`, then `yarn build:mpv-bridge` (builds the
+   native addon with `node-gyp`; it links Homebrew's libmpv).
+4. `yarn start`. The first launch asks for your Lampa/Lampac address.
+5. Optional: copy `~/Library/Application Support/Lampa` from the old Mac to keep
+   the address, login and `mpv.conf`.
 
 ## Required before this is an installable app
 
@@ -107,8 +146,8 @@ Behaviour:
    `node-addon-api` / `node-gyp` to `yarn.lock`.
 3. Port the changes to the `macos/ac3-eac3` branch (macOS builds come from there;
    the last one is ac3.7).
-4. Today it needs Homebrew's `mpv` installed and the addon built by hand:
-   `node-gyp rebuild` in `native/mpv-bridge` with Node 24.
+4. Today it needs Homebrew's `mpv` installed and the addon built with
+   `yarn build:mpv-bridge`.
 
 ## Notes on the local machine
 

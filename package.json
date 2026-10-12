@@ -26,7 +26,8 @@
     "lintfix": "eslint . --fix && prettier --write --list-different .",
     "release:changelog": "commit-and-tag-version",
     "release": "yarn release:changelog && git push --follow-tags origin $CI_COMMIT_REF_NAME",
-    "generate-icons": "node scripts/generate-icons.js"
+    "generate-icons": "node scripts/generate-icons.js",
+    "build:mpv-bridge": "cd native/mpv-bridge && node-gyp rebuild"
   },
   "commit-and-tag-version": {
     "scripts": {
@@ -46,6 +47,8 @@
     "eslint": "9.39.4",
     "eslint-config-prettier": "10.1.8",
     "globals": "17.11.0",
+    "node-addon-api": "8.9.2",
+    "node-gyp": "11.5.0",
     "prettier": "3.9.6"
   },
   "author": {

@@ -2,8 +2,10 @@
 // Built-in mpv player (macOS): libmpv renders into a native view that sits
 // behind the transparent Lampa web view. See native/mpv-bridge.
 const path = require("node:path");
+const { app } = require("electron");
 const { existsSync } = require("node:fs");
 const { mpvEvent } = require("./runtimeLogging");
+const mpvConfig = require("./mpvConfig");
 
 const OBSERVED = [
   "time-pos",
@@ -112,9 +114,43 @@ function ensureAttached(win) {
   return native;
 }
 
+// Options from the user's mpv.conf are applied before every file. Values that
+// were overridden are remembered so a line removed from the file is undone.
+const originals = new Map();
+
+function applyUserConfig(native, userData) {
+  const { entries } = mpvConfig.parse(mpvConfig.read(userData));
+  const wanted = new Set(
+    entries.filter((entry) => !entry.op).map((entry) => entry.name),
+  );
+  for (const [name, original] of originals) {
+    if (wanted.has(name)) continue;
+    if (original !== null) native.setProperty(name, original);
+    originals.delete(name);
+  }
+  for (const { name, value, op } of entries) {
+    let result;
+    if (op) {
+      result = native.command(["change-list", name, op, value]);
+    } else {
+      if (!originals.has(name)) originals.set(name, native.getProperty(name));
+      result = native.setProperty(name, value);
+    }
+    if (result < 0)
+      console.warn(`[mpv.conf] mpv rejected ${name}=${value} (${result})`);
+  }
+  return new Set(entries.map((entry) => entry.name));
+}
+
 // options: { start?: seconds, headers?: {k: v}, volume?: 0..100 }
 async function open(win, url, options = {}) {
   const native = ensureAttached(win);
+  let userKeys = new Set();
+  try {
+    userKeys = applyUserConfig(native, app.getPath("userData"));
+  } catch (error) {
+    console.error("[mpv.conf] failed:", error);
+  }
   const opts = [];
   if (options.start > 0) opts.push(`start=${options.start}`);
   if (options.headers) {
@@ -124,7 +160,8 @@ async function open(win, url, options = {}) {
     if (fields) opts.push(`http-header-fields=${fields}`);
   }
   for (const [key, value] of Object.entries(options.mpvOptions || {})) {
-    if (/^[a-z0-9-]+$/.test(key))
+    // The user's mpv.conf wins over the values chosen by the app.
+    if (/^[a-z0-9-]+$/.test(key) && !userKeys.has(key))
       opts.push(`${key}=${String(value).replace(/,/g, "")}`);
   }
   if (Number.isFinite(options.volume))

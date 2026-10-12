@@ -16,6 +16,12 @@
 
   function install() {
     const ONLINE_SETTING = "mpv_online_enabled";
+    const BUFFER_SETTING = "mpv_buffer_secs";
+    const CONFIG_BUTTON = "mpv_config_edit";
+    // The buffer lives in RAM (mpv's demuxer cache, no disk cache). Its size is
+    // limited both by time and by bytes, whichever is reached first.
+    const BUFFER_DEFAULT = 60;
+    const BUFFER_MAX_BYTES = "512MiB";
     const CLASS = "mpv-active";
     let active = null; // the shim instance currently owning mpv
     let need = "player"; // which Lampa player setting applies to the current play
@@ -41,17 +47,17 @@
       return type === "inner";
     }
 
-    const torrentChoices = Lampa.Params?.values?.player_torrent;
-    if (torrentChoices && Lampa.Params?.select) {
-      Lampa.Params.select(
-        "player_torrent",
-        {
-          ...torrentChoices,
-          inner: "Встроенный (MPV)",
-          mpv: "MPV",
-        },
-        "inner",
+    // The external «MPV» entry is hidden from every player list; the built-in
+    // mpv is reached through «Встроенный» (labelled «MPV» for torrents).
+    for (const key of ["player", "player_iptv", "player_torrent"]) {
+      const choices = Lampa.Params?.values?.[key];
+      if (!choices || !Lampa.Params?.select) continue;
+      const rest = Object.fromEntries(
+        Object.entries(choices).filter(([id]) => id !== "mpv"),
       );
+      if (key === "player_torrent") rest.inner = "Встроенный (MPV)";
+      Lampa.Params.select(key, rest, "inner");
+      if (Lampa.Storage.get(key) === "mpv") Lampa.Storage.set(key, "inner");
     }
 
     function onlineMpvEnabled() {
@@ -59,10 +65,22 @@
       return value === true || value === "true";
     }
 
+    function bufferSecs() {
+      const value = Number(Lampa.Storage.get(BUFFER_SETTING, BUFFER_DEFAULT));
+      return Number.isFinite(value) && value >= 5 && value <= 600
+        ? Math.round(value)
+        : BUFFER_DEFAULT;
+    }
+
+    // Set while the HTML5 player is being swapped for mpv (see the AC3 watcher).
+    let forceMpv = false;
+    let resumeAt = null;
+
     function enabled() {
       return (
-        (need === "player_torrent" || onlineMpvEnabled()) &&
-        replacesChoice(Lampa.Storage.field(need))
+        forceMpv ||
+        ((need === "player_torrent" || onlineMpvEnabled()) &&
+          replacesChoice(Lampa.Storage.field(need)))
       );
     }
 
@@ -208,7 +226,10 @@
     }
 
     function createShim() {
-      const playback = playData || {};
+      const playback = Lampa.Player.playdata?.() || playData || {};
+      // Position handed over from the HTML5 player after an AC3 fallback.
+      let handover = resumeAt;
+      resumeAt = null;
       const el = document.createElement("div");
       el.className = "player-video__video";
       el.style.background = "transparent";
@@ -315,6 +336,11 @@
       el.speed = (v) => (el.playbackRate = v);
 
       function initialPosition() {
+        if (handover !== null) {
+          const position = handover;
+          handover = null;
+          return position;
+        }
         if (state.pendingSeek !== null) return state.pendingSeek;
         const timeline = playback.timeline;
         const policy = Lampa.Storage.field("player_timecode");
@@ -427,7 +453,11 @@
           .open(state.src, {
             start: state.openingStart,
             volume: Math.round(state.volume * 100),
-            mpvOptions: { sid: "no" },
+            mpvOptions: {
+              sid: "no",
+              "demuxer-readahead-secs": bufferSecs(),
+              "demuxer-max-bytes": BUFFER_MAX_BYTES,
+            },
           })
           .then((result) => {
             if (result && result.ok) return;
@@ -581,6 +611,195 @@
 
     api.onEvent((ev) => active?.__mpvEvent(ev));
 
+    // The HTML5 player (Chromium) cannot decode AC3/EAC3: the video plays in
+    // silence, or an HLS stream fails outright. When that happens, reopen the
+    // same stream in mpv at the same position, inside the running player.
+    const switched = new Set();
+
+    // Editor for the user's mpv.conf. Plain overlay with a textarea: Lampa's own
+    // key handling would otherwise swallow typing and pasting.
+    async function openConfigEditor() {
+      const info = await api.getConfig().catch(() => null);
+      if (!info || document.querySelector(".mpv-conf")) return;
+      if (!document.getElementById("mpv-conf-style")) {
+        const style = document.createElement("style");
+        style.id = "mpv-conf-style";
+        style.textContent = `
+          .mpv-conf { position: fixed; inset: 0; z-index: 120; display: flex;
+            align-items: center; justify-content: center;
+            background: rgba(0, 0, 0, 0.75); color: #fff; }
+          .mpv-conf__box { width: min(90%, 52em); max-height: 90%; display: flex;
+            flex-direction: column; gap: 0.8em; padding: 1.6em; border-radius: 1em;
+            background: rgba(30, 30, 30, 0.95); }
+          .mpv-conf__title { font-size: 1.5em; }
+          .mpv-conf__hint, .mpv-conf__msg { font-size: 0.9em; opacity: 0.7; white-space: pre-wrap;
+            line-height: 1.4; word-break: break-word; }
+          .mpv-conf__msg { white-space: pre-wrap; min-height: 1.4em; }
+          .mpv-conf__text { height: 20em; resize: none; padding: 0.8em;
+            border: 0; border-radius: 0.6em; background: rgba(255, 255, 255, 0.1);
+            color: #fff; font: 0.95em/1.4 ui-monospace, Menlo, monospace; }
+          .mpv-conf__buttons { display: flex; gap: 0.8em; justify-content: flex-end; }
+          .mpv-conf__buttons button { padding: 0.6em 1.4em; border: 0; border-radius: 0.6em;
+            background: rgba(255, 255, 255, 0.15); color: #fff; font-size: 1em; cursor: pointer; }
+          .mpv-conf__buttons button:hover, .mpv-conf__buttons button:focus {
+            background: rgba(255, 255, 255, 0.3); outline: 0; }`;
+        document.head.appendChild(style);
+      }
+      const overlay = document.createElement("div");
+      overlay.className = "mpv-conf";
+      overlay.innerHTML = `
+        <div class="mpv-conf__box">
+          <div class="mpv-conf__title"></div>
+          <div class="mpv-conf__hint"></div>
+          <textarea class="mpv-conf__text" spellcheck="false" autocapitalize="off"
+            autocomplete="off" placeholder="# hwdec=videotoolbox&#10;# demuxer-max-bytes=1GiB"></textarea>
+          <div class="mpv-conf__msg"></div>
+          <div class="mpv-conf__buttons">
+            <button data-act="clear"></button>
+            <button data-act="cancel"></button>
+            <button data-act="save"></button>
+          </div>
+        </div>`;
+      const q = (selector) => overlay.querySelector(selector);
+      const t = (key) => Lampa.Lang.translate(key);
+      q(".mpv-conf__title").textContent = t("app_settings_mpv_config_title");
+      q(".mpv-conf__hint").textContent =
+        t("app_settings_mpv_config_hint") + "\n" + info.path;
+      q('[data-act="clear"]').textContent = t("app_settings_mpv_config_clear");
+      q('[data-act="cancel"]').textContent = t(
+        "app_settings_mpv_config_cancel",
+      );
+      q('[data-act="save"]').textContent = t("app_settings_mpv_config_save");
+      const text = q(".mpv-conf__text");
+      text.value = info.text;
+
+      const close = () => {
+        window.removeEventListener("keydown", onKey, true);
+        overlay.remove();
+      };
+      // Keep Lampa's global key handlers (which cancel default actions) away
+      // from the editor; Esc closes it.
+      function onKey(event) {
+        if (!overlay.contains(event.target)) return;
+        event.stopImmediatePropagation();
+        if (event.key === "Escape") close();
+      }
+      window.addEventListener("keydown", onKey, true);
+
+      overlay.addEventListener("click", async (event) => {
+        const act = event.target?.dataset?.act;
+        if (event.target === overlay || act === "cancel") return close();
+        if (act === "clear") {
+          text.value = "";
+          text.focus();
+        }
+        if (act !== "save") return;
+        const result = await api.setConfig(text.value).catch(() => null);
+        if (!result?.ok) {
+          q(".mpv-conf__msg").textContent =
+            t("app_settings_mpv_config_error") +
+            (result?.error ? ": " + result.error : "");
+          return;
+        }
+        if (result.ignored.length) {
+          q(".mpv-conf__msg").textContent =
+            t("app_settings_mpv_config_ignored") +
+            "\n" +
+            result.ignored
+              .map((item) => `${item.line}: ${item.text} — ${item.reason}`)
+              .join("\n");
+          return;
+        }
+        close();
+        showToast(t("app_settings_mpv_config_saved"));
+      });
+      document.body.appendChild(overlay);
+      text.focus();
+    }
+
+    // Lampa's own notice is a bright full-width bar; this one is a small dark
+    // translucent box with white text, like the rest of Lampa's overlays.
+    function showToast(text) {
+      if (!document.getElementById("mpv-toast-style")) {
+        const style = document.createElement("style");
+        style.id = "mpv-toast-style";
+        style.textContent = `
+          .mpv-toast {
+            position: fixed; left: 50%; bottom: 9em; z-index: 99;
+            max-width: 80%; padding: 0.9em 1.6em; border-radius: 1em;
+            background: rgba(0, 0, 0, 0.7); color: #fff; line-height: 1.4;
+            font-size: 1.2em; text-align: center; pointer-events: none;
+            -webkit-backdrop-filter: blur(1em); backdrop-filter: blur(1em);
+            transform: translate(-50%, 1em); opacity: 0;
+            transition: opacity 0.3s, transform 0.3s;
+          }
+          .mpv-toast--visible { transform: translate(-50%, 0); opacity: 1; }`;
+        document.head.appendChild(style);
+      }
+      document.querySelector(".mpv-toast")?.remove();
+      const box = document.createElement("div");
+      box.className = "mpv-toast";
+      box.textContent = text;
+      document.body.appendChild(box);
+      requestAnimationFrame(() => box.classList.add("mpv-toast--visible"));
+      setTimeout(() => {
+        box.classList.remove("mpv-toast--visible");
+        setTimeout(() => box.remove(), 400);
+      }, 3500);
+    }
+
+    function switchToMpv(video, reason) {
+      const work = Lampa.Player.playdata?.();
+      if (!work || work.iptv || !Lampa.Player.opened?.()) return;
+      // hls.js feeds the element a blob: URL, so reopen the original link.
+      const raw = work.url || video.currentSrc || video.src;
+      const src = Lampa.Torserver?.toPlayUrl?.(raw) || raw;
+      // One attempt per link: never loop if mpv cannot take it either.
+      if (!src || switched.has(src) || !/^(https?|file):/i.test(String(src)))
+        return;
+      switched.add(src);
+      const position = Number.isFinite(video.currentTime)
+        ? video.currentTime
+        : 0;
+      console.log("[mpv] AC3/EAC3 fallback:", reason, "at", position);
+      forceMpv = true;
+      resumeAt = position > 5 ? position : 0;
+      try {
+        Lampa.PlayerVideo.destroy(true);
+        Lampa.PlayerVideo.url(src, true);
+        Lampa.Timeline?.resetContinue?.();
+        showToast("Звук AC3/EAC3: открыто во встроенном mpv");
+      } finally {
+        forceMpv = false;
+      }
+    }
+
+    Lampa.Player.listener.follow("destroy", () => switched.clear());
+
+    setInterval(() => {
+      const video = document.querySelector("video.player-video__video");
+      if (!video || video.paused) return;
+      // Audio is only decoded after playback has really started.
+      if (video.readyState < 3 || video.currentTime < 1.5) return;
+      if (video.muted || video.volume === 0) return;
+      if (video.webkitAudioDecodedByteCount === 0)
+        switchToMpv(video, "no audio decoded");
+    }, 1000);
+
+    Lampa.PlayerVideo.listener.follow("error", (event) => {
+      if (!event?.fatal) return;
+      const video = document.querySelector("video.player-video__video");
+      const work = Lampa.Player.playdata?.();
+      // Leave Lampa's own reserve-link handling alone.
+      if (!video || !work || work.url_reserve || work.error) return;
+      const unsupported = [3, 4].includes(video.error?.code);
+      if (
+        unsupported ||
+        /\.m3u8|\.mpd/i.test(video.currentSrc || video.src || "")
+      )
+        switchToMpv(video, "fatal HTML5 error");
+    });
+
     Lampa.PlayerVideo.registerTube({
       name: "mpv",
       verify: (src) => enabled() && /^(https?|file):/i.test(String(src)),
@@ -598,6 +817,45 @@
         ru: "Использовать mpv для онлайн",
         en: "Use mpv for online playback",
       },
+      app_settings_mpv_buffer: {
+        ru: "Буфер mpv",
+        en: "mpv buffer",
+      },
+      app_settings_mpv_buffer_descr: {
+        ru: "Сколько секунд видео mpv загружает вперёд. Буфер хранится в оперативной памяти (на диск не пишется) и не больше 512 МБ: у тяжёлых 4K-потоков он будет короче. Действует при следующем открытии видео.",
+        en: "How many seconds of video mpv loads ahead. The buffer is kept in RAM (nothing is written to disk) and is capped at 512 MB, so heavy 4K streams get less. Takes effect the next time a video opens.",
+      },
+      app_settings_mpv_config: {
+        ru: "Конфигурация mpv (mpv.conf)",
+        en: "mpv configuration (mpv.conf)",
+      },
+      app_settings_mpv_config_descr: {
+        ru: "Вставьте содержимое mpv.conf. Хранится в файле до вашего изменения. Действует со следующего видео; опции из файла важнее настроек приложения.",
+        en: "Paste the contents of mpv.conf. Kept in a file until you change it. Applies to the next video; options from the file override the app's settings.",
+      },
+      app_settings_mpv_config_title: {
+        ru: "Конфигурация mpv",
+        en: "mpv configuration",
+      },
+      app_settings_mpv_config_hint: {
+        ru: "Формат mpv.conf: опция=значение, по одной в строке; # — комментарий. Профили [секции] и опции запуска кода игнорируются. Файл:",
+        en: "mpv.conf format: option=value, one per line; # starts a comment. [profile] sections and options that run code are ignored. File:",
+      },
+      app_settings_mpv_config_save: { ru: "Сохранить", en: "Save" },
+      app_settings_mpv_config_cancel: { ru: "Отмена", en: "Cancel" },
+      app_settings_mpv_config_clear: { ru: "Очистить", en: "Clear" },
+      app_settings_mpv_config_saved: {
+        ru: "Конфигурация mpv сохранена",
+        en: "mpv configuration saved",
+      },
+      app_settings_mpv_config_error: {
+        ru: "Не удалось сохранить",
+        en: "Could not save",
+      },
+      app_settings_mpv_config_ignored: {
+        ru: "Сохранено, но эти строки игнорируются:",
+        en: "Saved, but these lines are ignored:",
+      },
       app_settings_mpv_online_descr: {
         ru: "Выключено: онлайн и IPTV через HTML5. Включено: через встроенный mpv. Для торрентов пункт «Встроенный» всегда использует mpv. Изменение действует при следующем открытии видео.",
         en: "Off: online and IPTV use HTML5. On: use built-in mpv. The internal torrent player always uses mpv. Takes effect the next time a video opens.",
@@ -610,6 +868,46 @@
         name: Lampa.Lang.translate("app_settings_mpv_online"),
         description: Lampa.Lang.translate("app_settings_mpv_online_descr"),
       },
+    });
+    Lampa.SettingsApi.addParam({
+      component: "player",
+      param: {
+        name: BUFFER_SETTING,
+        type: "select",
+        values: {
+          15: "15 с",
+          30: "30 с",
+          60: "60 с",
+          120: "2 мин",
+          300: "5 мин",
+        },
+        default: String(BUFFER_DEFAULT),
+      },
+      field: {
+        name: Lampa.Lang.translate("app_settings_mpv_buffer"),
+        description: Lampa.Lang.translate("app_settings_mpv_buffer_descr"),
+      },
+    });
+    Lampa.SettingsApi.addParam({
+      component: "player",
+      param: { name: CONFIG_BUTTON, type: "button" },
+      field: {
+        name: Lampa.Lang.translate("app_settings_mpv_config"),
+        description: Lampa.Lang.translate("app_settings_mpv_config_descr"),
+      },
+      onChange: () => void openConfigEditor(),
+    });
+    // Added params are appended to the end of the page; put this one right
+    // after «Тип плеера» (before Lampa collects the focusable items).
+    Lampa.Settings.listener.follow("open", (event) => {
+      if (event.name !== "player") return;
+      const item = event.body.find(`[data-name="${ONLINE_SETTING}"]`);
+      const type = event.body.find('[data-name="player"]');
+      if (item.length && type.length) type.after(item);
+      const buffer = event.body.find(`[data-name="${BUFFER_SETTING}"]`);
+      if (buffer.length && item.length) item.after(buffer);
+      const config = event.body.find(`[data-name="${CONFIG_BUTTON}"]`);
+      if (config.length && buffer.length) buffer.after(config);
     });
   }
 })();

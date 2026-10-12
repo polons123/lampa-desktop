@@ -174,6 +174,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     get: (name) => ipcRenderer.invoke("mpv:get", name),
     set: (name, value) => ipcRenderer.invoke("mpv:set", name, value),
     stop: () => ipcRenderer.invoke("mpv:stop"),
+    getConfig: () => ipcRenderer.invoke("mpv:config-get"),
+    setConfig: (text) => ipcRenderer.invoke("mpv:config-set", text),
     onEvent: (callback) => {
       const listener = (_event, data) => callback(data);
       ipcRenderer.on("mpv:event", listener);
